@@ -13,6 +13,7 @@ import { lstat, open, realpath, rename, rm } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, dirname, extname, isAbsolute, join, resolve } from 'node:path'
 import type { FileMentionInfo, FileReadResult, FileStamp, FileWriteResult } from '../../shared/api'
+import { MAX_WORKTREE_IMAGE_BYTES, worktreeImageMimeType } from '../../shared/worktree-files'
 import { t } from '../i18n'
 import { readLanes } from '../git/limit'
 import { resolveWorktreePath } from './paths'
@@ -29,10 +30,26 @@ const BLOCKED_EXTERNAL_EXTENSIONS = new Set([
 const WINDOWS_SCRIPT_EXTENSIONS = new Set(['.vbs', '.vbe', '.js', '.jse', '.wsf', '.wsh', '.ps1'])
 
 async function readBoundedAbsoluteFile(absolute: string): Promise<FileReadResult> {
+  const imageMime = worktreeImageMimeType(absolute)
+  const rasterImage = imageMime !== null && imageMime !== 'image/svg+xml'
   try {
     const info = await lstat(absolute)
     if (info.isSymbolicLink()) return { kind: 'link' }
     if (!info.isFile()) return { kind: 'missing' }
+    if (rasterImage || (imageMime === 'image/svg+xml' && info.size > MAX_EDITABLE_BYTES)) {
+      if (info.size > MAX_WORKTREE_IMAGE_BYTES) return { kind: 'too-large', size: info.size }
+      return await readLanes.run(async () => {
+        const handle = await open(absolute, constants.O_RDONLY | constants.O_NOFOLLOW)
+        try {
+          const after = await handle.stat()
+          if (!after.isFile()) return { kind: 'missing' }
+          if (after.size > MAX_WORKTREE_IMAGE_BYTES) return { kind: 'too-large', size: after.size }
+          return { kind: 'image', mimeType: imageMime, ...stampOf(after) }
+        } finally {
+          await handle.close()
+        }
+      })
+    }
     if (info.size > MAX_EDITABLE_BYTES) return { kind: 'too-large', size: info.size }
 
     // O_NOFOLLOW holds the refusal at the open itself, so a link that appears between the lstat above
@@ -50,7 +67,12 @@ async function readBoundedAbsoluteFile(absolute: string): Promise<FileReadResult
         const buffer = Buffer.allocUnsafe(MAX_EDITABLE_BYTES + 1)
         const read = await readCapped(handle, buffer)
         const after = await handle.stat()
-        if (read > MAX_EDITABLE_BYTES) return { kind: 'too-large', size: after.size }
+        if (read > MAX_EDITABLE_BYTES) {
+          if (imageMime === 'image/svg+xml' && after.size <= MAX_WORKTREE_IMAGE_BYTES) {
+            return { kind: 'image', mimeType: imageMime, ...stampOf(after) }
+          }
+          return { kind: 'too-large', size: after.size }
+        }
         const bytes = buffer.subarray(0, read)
         if (bytes.subarray(0, BINARY_PROBE_BYTES).includes(0)) return { kind: 'binary', size: after.size }
         return { kind: 'text', contents: bytes.toString('utf8'), ...stampOf(after) }
@@ -160,7 +182,7 @@ export async function fileMentionInfo(cwd: string, path: string): Promise<FileMe
   return {
     kind: 'file',
     absolutePath: target.absolute,
-    modifiedAt: read.kind === 'text' ? read.mtimeMs : info.mtimeMs,
+    modifiedAt: read.kind === 'text' || read.kind === 'image' ? read.mtimeMs : info.mtimeMs,
     lineCount: read.kind === 'text' ? lineCount(read.contents) : null
   }
 }
@@ -209,7 +231,7 @@ export async function localFileMentionInfo(rawPath: string): Promise<FileMention
   return {
     kind: 'file',
     absolutePath: absolute,
-    modifiedAt: read?.kind === 'text' ? read.mtimeMs : info.mtimeMs,
+    modifiedAt: read?.kind === 'text' || read?.kind === 'image' ? read.mtimeMs : info.mtimeMs,
     lineCount: read?.kind === 'text' ? lineCount(read.contents) : null
   }
 }

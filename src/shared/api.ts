@@ -495,6 +495,7 @@ export interface FileStamp {
  */
 export type FileReadResult =
   | ({ kind: 'text'; contents: string } & FileStamp)
+  | ({ kind: 'image'; mimeType: string } & FileStamp)
   | { kind: 'binary'; size: number }
   | { kind: 'too-large'; size: number }
   | { kind: 'link' }

@@ -23,7 +23,7 @@ export interface DirectoryState {
 }
 
 /** Why a file has no editor: the tab says so rather than showing an empty document. */
-export type FilePreview = 'text' | 'binary' | 'too-large' | 'link' | 'missing'
+export type FilePreview = 'text' | 'image' | 'binary' | 'too-large' | 'link' | 'missing'
 
 export interface FileDocument {
   status: 'loading' | 'ready' | 'error'
@@ -92,10 +92,32 @@ export interface FileScrollOffset {
   previewScrollTop: number
 }
 
+export interface FileImageViewState {
+  scale: number
+  tx: number
+  ty: number
+  grid: boolean
+}
+
+const DEFAULT_IMAGE_VIEW: FileImageViewState = { scale: 1, tx: 0, ty: 0, grid: false }
+
 const fileScrollOffsets = new Map<string, FileScrollOffset>()
+const fileImageViews = new Map<string, FileImageViewState>()
 
 export function savedFileScroll(key: string): FileScrollOffset {
   return fileScrollOffsets.get(key) ?? { scrollTop: 0, scrollLeft: 0, previewScrollTop: 0 }
+}
+
+export function savedImageView(key: string): FileImageViewState {
+  return fileImageViews.get(key) ?? DEFAULT_IMAGE_VIEW
+}
+
+export function rememberImageView(key: string, next: FileImageViewState): void {
+  if (next.scale === 1 && next.tx === 0 && next.ty === 0 && !next.grid) {
+    fileImageViews.delete(key)
+    return
+  }
+  fileImageViews.set(key, next)
 }
 
 export function rememberFileScroll(key: string, scrollTop: number, scrollLeft: number): void {
@@ -380,7 +402,22 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
             saving: false,
             saveError: undefined
           }
-        : refusal(document, result.kind, 'size' in result ? result.size : null)),
+        : result.kind === 'image'
+          ? {
+              ...document,
+              status: 'ready',
+              preview: 'image',
+              text: '',
+              saved: '',
+              stamp: { mtimeMs: result.mtimeMs, size: result.size },
+              bytes: result.size,
+              revision: document.revision + 1,
+              stale: false,
+              error: undefined,
+              saving: false,
+              saveError: undefined
+            }
+          : refusal(document, result.kind, 'size' in result ? result.size : null)),
       refreshError: undefined
     }))
   },
@@ -393,6 +430,7 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
       const document = state.documents[key]
       if (document && (isDirty(document) || document.saving)) return state
       fileScrollOffsets.delete(key)
+      fileImageViews.delete(key)
       const hasDoc = key in state.documents
       const hasSource = key in state.sourceViews
       if (!hasDoc && !hasSource) return state
@@ -428,6 +466,14 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         if (renamed === null) continue
         fileScrollOffsets.set(fileKey(cwd, renamed), offset)
         fileScrollOffsets.delete(key)
+      }
+      for (const [key, view] of [...fileImageViews.entries()]) {
+        const path = pathOf(cwd, key)
+        if (path === null) continue
+        const renamed = renamedPath(path, from, to)
+        if (renamed === null) continue
+        fileImageViews.set(fileKey(cwd, renamed), view)
+        fileImageViews.delete(key)
       }
       for (const [key, show] of Object.entries(state.sourceViews)) {
         const path = pathOf(cwd, key)
@@ -476,6 +522,12 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
         fileScrollOffsets.delete(existing)
       }
     }
+    for (const existing of [...fileImageViews.keys()]) {
+      const at = pathOf(cwd, existing)
+      if (at !== null && (at === path || isUnder(at, path))) {
+        fileImageViews.delete(existing)
+      }
+    }
     set((state) => {
       const documents: Record<string, FileDocument> = {}
       const sourceViews: Record<string, boolean> = {}
@@ -507,6 +559,9 @@ export const useFilesStore = create<FilesStore>((set, get) => ({
     }
     for (const key of [...fileScrollOffsets.keys()]) {
       if (key.endsWith(`\u0000${cwd}`)) fileScrollOffsets.delete(key)
+    }
+    for (const key of [...fileImageViews.keys()]) {
+      if (key.endsWith(`\u0000${cwd}`)) fileImageViews.delete(key)
     }
     set((state) => {
       const hasTree = cwd in state.trees
@@ -606,14 +661,34 @@ function refreshed(current: FileDocument, result: FileReadResult): FileDocument 
       ? { ...current, stamp: { mtimeMs: result.mtimeMs, size: result.size }, stale: false }
       : { ...current, stale: true }
   }
+  if (result.kind === 'image') {
+    const unchanged =
+      current.preview === 'image' &&
+      current.stamp?.mtimeMs === result.mtimeMs &&
+      current.stamp?.size === result.size
+    return {
+      ...current,
+      preview: 'image',
+      text: '',
+      saved: '',
+      stamp: { mtimeMs: result.mtimeMs, size: result.size },
+      bytes: result.size,
+      revision: unchanged ? current.revision : current.revision + 1,
+      stale: false,
+      error: undefined,
+      saving: false,
+      saveError: undefined
+    }
+  }
   if (result.kind !== 'text') {
     return refusal(current, result.kind, 'size' in result ? result.size : null)
   }
-  if (result.contents === current.saved) {
-    return { ...current, stamp: { mtimeMs: result.mtimeMs, size: result.size }, stale: false }
+  if (current.preview === 'text' && result.contents === current.saved) {
+    return { ...current, stamp: { mtimeMs: result.mtimeMs, size: result.size }, bytes: result.size, stale: false }
   }
   return {
     ...current,
+    preview: 'text',
     text: result.contents,
     saved: result.contents,
     stamp: { mtimeMs: result.mtimeMs, size: result.size },

@@ -1,4 +1,4 @@
-/** Registers the `pig-file` scheme the markdown preview loads worktree images through. */
+/** Registers the `pig-file` scheme file tabs and markdown previews load worktree images through. */
 import { protocol } from 'electron'
 import { WORKTREE_FILE_SCHEME } from '../shared/worktree-files'
 import { worktreeImageResponse } from './files/image'

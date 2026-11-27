@@ -485,6 +485,92 @@ async function runFixture(name: string): Promise<void> {
     return
   }
 
+  if (name === 'image-preview') {
+    const { worktreeFileUrl } = await import('../src/shared/worktree-files')
+    let pngStamp = { mtimeMs: 10, size: 3_500_000 }
+    disk = { ...disk, 'icons/mark.svg': '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/></svg>\n' }
+    stamps = { ...stamps, 'icons/mark.svg': 7 } as typeof stamps
+    api.readFile = async (_cwd, path): Promise<FileReadResult> => {
+      if (path === '美术/人物/P003.png') {
+        return { kind: 'image', mimeType: 'image/png', ...pngStamp }
+      }
+      if (path === 'huge.png') {
+        return { kind: 'too-large', size: 120 * 1024 * 1024 }
+      }
+      if (!(path in disk)) return { kind: 'missing' }
+      return { kind: 'text', contents: disk[path], mtimeMs: stamps[path as keyof typeof stamps], size: disk[path].length }
+    }
+
+    await open('美术/人物/P003.png')
+    const img = () => container.querySelector<HTMLImageElement>('[data-file-image-preview]')
+    assert.ok(img(), 'large raster image opens in the image preview instead of refusing past 2 MB')
+    assert.equal(img()!.getAttribute('src'), worktreeFileUrl(cwd, '美术/人物/P003.png', 1))
+    assert.equal(
+      [...container.querySelectorAll('button')].some((button) => button.textContent === '保存'),
+      false,
+      'raster images do not render a disabled text Save button'
+    )
+
+    Object.defineProperty(img()!, 'naturalWidth', { value: 2048, configurable: true })
+    Object.defineProperty(img()!, 'naturalHeight', { value: 3072, configurable: true })
+    await React.act(async () => {
+      img()!.dispatchEvent(new window.Event('load'))
+    })
+    assert.equal(
+      container.querySelector('[data-file-image-meta]')?.textContent,
+      '2048 × 3072 · 3.3 MB',
+      'header shows decoded dimensions and file size'
+    )
+
+    // Zoom in and toggle transparency grid; both persist across disk refreshes and tab switches.
+    const zoomIn = container.querySelector<HTMLButtonElement>('button[aria-label="放大"]')!
+    const gridToggle = container.querySelector<HTMLButtonElement>('[data-file-image-grid-toggle]')!
+    await React.act(async () => {
+      zoomIn.click()
+      gridToggle.click()
+    })
+    assert.match(img()!.style.transform, /scale\(1\.25\)/)
+    assert.equal(gridToggle.getAttribute('aria-pressed'), 'true')
+
+    pngStamp = { mtimeMs: 22, size: 3_600_000 }
+    await React.act(async () => {
+      change!(cwd)
+    })
+    await settle('美术/人物/P003.png')
+    assert.equal(
+      img()!.getAttribute('src'),
+      worktreeFileUrl(cwd, '美术/人物/P003.png', 2),
+      'disk changes bust the cached pig-file URL'
+    )
+    assert.match(img()!.style.transform, /scale\(1\.25\)/, 'in-place refresh preserves zoom')
+
+    // Switch to an SVG file: starts on image preview, offers source toggle, and previews unsaved SVG drafts.
+    await open('icons/mark.svg')
+    assert.ok(img(), 'SVG opens on image preview by default')
+    assert.equal(img()!.getAttribute('src'), worktreeFileUrl(cwd, 'icons/mark.svg', 1))
+    const toggle = () => container.querySelector<HTMLButtonElement>('[data-markdown-view-toggle]')!
+    assert.ok(toggle(), 'SVG <= 2 MB offers preview/source toggle')
+    await React.act(async () => {
+      toggle().click()
+    })
+    assert.equal(img(), null, 'switching SVG to source hides the image preview')
+    await React.act(async () => {
+      useFilesStore.getState().setDraft(cwd, 'icons/mark.svg', '<svg viewBox="0 0 32 32"></svg>\n')
+      toggle().click()
+    })
+    assert.ok(img()!.getAttribute('src')?.startsWith('data:image/svg+xml;charset=utf-8,'), 'dirty SVG previews unsaved draft')
+
+    // Returning to the raster image tab restores its zoom and grid toggle.
+    await open('美术/人物/P003.png')
+    assert.match(img()!.style.transform, /scale\(1\.25\)/)
+    assert.equal(container.querySelector('[data-file-image-grid-toggle]')?.getAttribute('aria-pressed'), 'true')
+
+    // Images past the 100 MB cap report the 100 MB image limit rather than the 2 MB text limit.
+    await open('huge.png')
+    assert.match(container.textContent ?? '', /图片超过 100 MB/)
+    return
+  }
+
   throw new Error(`Unknown fixture: ${name}`)
 }
 
@@ -499,7 +585,8 @@ if (process.argv[2] === '--file-view-fixture') {
     'open-failure': 'a file the desktop will not open reports the reason on the tab',
     markdown: 'markdown toggles between a preview of the draft and the mounted source editor',
     'settings-roundtrip': 'settings roundtrip preserves markdown source mode and selection without caching files across tabs',
-    'idle-editor-warmup': 'warms hidden markdown source editor on idle without blocking preview commit'
+    'idle-editor-warmup': 'warms hidden markdown source editor on idle without blocking preview commit',
+    'image-preview': 'previews raster and SVG images past 2 MB with zoom, grid, live refresh, and SVG source toggle'
   })) {
     test(`file view: ${description}`, async () => {
       const { exitCode: code, stdout, stderr } = await runSelf(import.meta.path, ['--file-view-fixture', name])

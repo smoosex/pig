@@ -1,11 +1,35 @@
 /**
- * URL scheme that serves image files from an opened worktree, for the markdown preview of a file tab.
+ * URL scheme and MIME mapping for image files inside an opened worktree, shared by file tabs and
+ * Markdown image previews.
  *
- * A README names its images relative to itself; the renderer has no file access, so the preview turns
- * each path into one of these URLs and main reads the bytes through the same worktree guards as a file
- * tab does.
+ * The renderer has no direct filesystem access, so image previews address worktree files through
+ * `pig-file://` URLs and main serves the bytes through the same worktree path and symlink guards as
+ * `files:read`.
  */
 export const WORKTREE_FILE_SCHEME = 'pig-file'
+
+export const MAX_WORKTREE_IMAGE_BYTES = 100 * 1024 * 1024
+
+const WORKTREE_IMAGE_TYPES: Record<string, string> = {
+  png: 'image/png',
+  apng: 'image/apng',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  jfif: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  svg: 'image/svg+xml'
+}
+
+export function worktreeImageMimeType(path: string): string | null {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  const dot = path.lastIndexOf('.')
+  if (dot <= slash + 1) return null
+  return WORKTREE_IMAGE_TYPES[path.slice(dot + 1).toLowerCase()] ?? null
+}
 
 export interface WorktreeFileTarget {
   cwd: string
@@ -14,8 +38,9 @@ export interface WorktreeFileTarget {
 }
 
 /** `pig-file://worktree/<cwd>/<path>`, each part escaped whole so neither can bleed into the other. */
-export function worktreeFileUrl(cwd: string, path: string): string {
-  return `${WORKTREE_FILE_SCHEME}://worktree/${encodeURIComponent(cwd)}/${encodeURIComponent(path)}`
+export function worktreeFileUrl(cwd: string, path: string, revision?: number): string {
+  const base = `${WORKTREE_FILE_SCHEME}://worktree/${encodeURIComponent(cwd)}/${encodeURIComponent(path)}`
+  return revision === undefined ? base : `${base}?r=${revision}`
 }
 
 export function parseWorktreeFileUrl(url: string): WorktreeFileTarget | null {

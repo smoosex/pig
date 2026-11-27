@@ -151,12 +151,38 @@ describe('readFile', () => {
     expect(await readTabFile(root, 'hosts-link')).toEqual({ kind: 'link' })
   })
 
-  test('refuses binary bytes and anything past the cap', async () => {
+  test('refuses binary bytes and anything past the cap, while letting images preview past 2 MB', async () => {
     const root = await fixture()
     await writeFile(join(root, 'blob.bin'), Buffer.from([1, 0, 2, 3]))
     expect(await readTabFile(root, 'blob.bin')).toEqual({ kind: 'binary', size: 4 })
     await writeFile(join(root, 'big.txt'), 'x'.repeat(2 * 1024 * 1024 + 10))
     expect(await readTabFile(root, 'big.txt')).toEqual({ kind: 'too-large', size: 2 * 1024 * 1024 + 10 })
+
+    // Raster images — including ones well past the 2 MB text cap — return an image stamp without reading text.
+    const bigPngSize = 3 * 1024 * 1024
+    await writeFile(join(root, 'art.png'), Buffer.alloc(bigPngSize, 0))
+    expect(await readTabFile(root, 'art.png')).toEqual({
+      kind: 'image',
+      mimeType: 'image/png',
+      mtimeMs: expect.any(Number),
+      size: bigPngSize
+    })
+
+    // Small SVGs stay editable text; SVGs past 2 MB fall back to read-only image preview.
+    await writeFile(join(root, 'icon.svg'), '<svg viewBox="0 0 16 16"></svg>\n')
+    expect((await readTabFile(root, 'icon.svg')).kind).toBe('text')
+    const bigSvg = `<svg>${' '.repeat(2 * 1024 * 1024 + 32)}</svg>`
+    await writeFile(join(root, 'vector.svg'), bigSvg)
+    expect(await readTabFile(root, 'vector.svg')).toEqual({
+      kind: 'image',
+      mimeType: 'image/svg+xml',
+      mtimeMs: expect.any(Number),
+      size: bigSvg.length
+    })
+
+    // Symlinked images still refuse to follow outside or inside the worktree.
+    await symlink(join(root, 'art.png'), join(root, 'art-link.png'))
+    expect(await readTabFile(root, 'art-link.png')).toEqual({ kind: 'link' })
   })
 
   // Reads go through the pool the untracked cards use, so a change event that re-reads every open tab

@@ -17,6 +17,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { Components } from 'react-markdown'
 import type { Translate } from '../../../../shared/i18n'
+import { formatPastedTextSize } from '../../../../shared/pasted-text'
+import { worktreeFileUrl, worktreeImageMimeType } from '../../../../shared/worktree-files'
 import {
   Editor,
   type EditorChangeEvent,
@@ -26,6 +28,7 @@ import {
 import { EditProvider, File as FileCode, Virtualizer } from '@pierre/diffs/react'
 import { api } from '../../ipc/api'
 import { splitPath } from '../diff/file-entry'
+import { FileImagePreview, type ImageDimensions } from './FileImagePreview'
 import { FileTypeIcon } from './FileTypeIcon'
 import { fileCodeOptions } from '../diff/diff-options'
 import {
@@ -57,6 +60,11 @@ import { useSessionsStore } from '../../stores/sessions'
 import { headingSlug, markdownImageSrc, markdownTarget } from './markdown-links'
 
 const MARKDOWN_PATH = /\.(md|markdown)$/i
+const SVG_PATH = /\.svg$/i
+
+function svgDraftUrl(text: string): string {
+  return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(text)}`
+}
 
 const createEditor: EditorFactory<undefined, undefined> = (type, options, editStateKey) =>
   new Editor(type, options, editStateKey)
@@ -152,11 +160,27 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
   }, [cwd, path, openFileTab])
 
   const { name, directory } = splitPath(path)
+  const imageMime = worktreeImageMimeType(path)
+  const rasterImagePath = imageMime !== null && imageMime !== 'image/svg+xml'
   const dirty = document ? isDirty(document) : false
   const saving = document?.saving === true
   const markdown = MARKDOWN_PATH.test(path) && document?.status === 'ready' && document.preview === 'text'
+  const svgText = SVG_PATH.test(path) && document?.status === 'ready' && document.preview === 'text'
+  const canTogglePreview = markdown || svgText
   // A pending reveal shows the source in the same commit, so the editor is visible when it is focused.
-  const previewing = markdown && !sourceChosen && !revealPending
+  const previewing = canTogglePreview && !sourceChosen && !revealPending
+  const imageOnly = document?.status === 'ready' && document.preview === 'image'
+  const showingImage = imageOnly || (svgText && previewing)
+  const [imageDimensions, setImageDimensions] = useState<({ key: string } & ImageDimensions) | null>(null)
+  const activeDimensions = imageDimensions?.key === key ? imageDimensions : null
+  const imageMeta = showingImage
+    ? [
+        activeDimensions ? `${activeDimensions.width} × ${activeDimensions.height}` : null,
+        document?.bytes !== null && document?.bytes !== undefined ? formatPastedTextSize(document.bytes) : null
+      ]
+        .filter(Boolean)
+        .join(' · ')
+    : ''
   const [editorWarmKey, setEditorWarmKey] = useState<string | null>(null)
   const mountEditor = !previewing || dirty || editorWarmKey === key
 
@@ -177,7 +201,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
 
   // Restore and track Markdown preview scroll position across tab switches, preview toggles, and disk updates.
   useLayoutEffect(() => {
-    if (!previewing) return
+    if (!markdown || !previewing) return
     const preview = previewRef.current
     if (!preview) return
     const targetTop = savedFileScroll(key).previewScrollTop
@@ -217,7 +241,7 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
       preview.removeEventListener('pointerdown', stop)
       preview.removeEventListener('touchstart', stop)
     }
-  }, [previewing, key, document?.revision])
+  }, [markdown, previewing, key, document?.revision])
 
   return (
     <div
@@ -237,7 +261,12 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
           <span className="min-w-0 truncate text-xs text-muted-foreground">{directory}</span>
         ) : null}
         <span className="flex-1" />
-        {markdown ? (
+        {imageMeta ? (
+          <span data-file-image-meta className="shrink-0 text-xs text-muted-foreground tabular-nums">
+            {imageMeta}
+          </span>
+        ) : null}
+        {canTogglePreview ? (
           <Button
             type="button"
             variant="ghost"
@@ -251,16 +280,18 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
             {previewing ? <Code /> : <Eye />}
           </Button>
         ) : null}
-        <Button
-          type="button"
-          variant="ghost"
-          size="xs"
-          className="text-muted-foreground"
-          disabled={!dirty || saving}
-          onClick={() => void saveDocument(cwd, path)}
-        >
-          {saving ? t('file.saving') : t('file.save')}
-        </Button>
+        {!rasterImagePath && document?.preview !== 'image' ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="text-muted-foreground"
+            disabled={!dirty || saving}
+            onClick={() => void saveDocument(cwd, path)}
+          >
+            {saving ? t('file.saving') : t('file.save')}
+          </Button>
+        ) : null}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button type="button" variant="ghost" size="xs" className="text-muted-foreground">
@@ -335,10 +366,20 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
         // The editor keeps its layout under the preview: hiding it with display would make the virtualizer
         // measure and paint from scratch when the source comes back, which shows as a flash.
         <div className="relative flex min-h-0 flex-1 flex-col">
-          {previewing ? (
+          {markdown && previewing ? (
             <div ref={previewRef} data-markdown-preview className="absolute inset-0 overflow-y-auto px-6 py-4 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <MarkdownText className="mx-auto max-w-3xl text-sm" text={document.text} allowHtml overrides={previewComponents} />
             </div>
+          ) : svgText && previewing ? (
+            <FileImagePreview
+              key={`preview:${key}`}
+              surfaceKey={key}
+              src={dirty ? svgDraftUrl(document.text) : worktreeFileUrl(cwd, path, document.revision)}
+              alt={name}
+              className="absolute inset-0 z-10"
+              onDimensions={(dims) => setImageDimensions(dims ? { key, ...dims } : null)}
+              onReload={() => void reloadDocument(cwd, path)}
+            />
           ) : null}
           {mountEditor ? (
             <FileSurface
@@ -356,11 +397,20 @@ export default function FileView({ cwd, path }: { cwd: string; path: string }) {
             />
           ) : null}
         </div>
+      ) : imageOnly ? (
+        <FileImagePreview
+          key={key}
+          surfaceKey={key}
+          src={worktreeFileUrl(cwd, path, document.revision)}
+          alt={name}
+          onDimensions={(dims) => setImageDimensions(dims ? { key, ...dims } : null)}
+          onReload={() => void reloadDocument(cwd, path)}
+        />
       ) : (
         // A read that failed is the one preview with a way out of it: nothing about the file itself says
         // it is unreadable, so the tab offers the read again rather than making the reader close it.
         <div className="flex items-center gap-2 px-3 py-2 text-xs text-muted-foreground">
-          <span className="min-w-0 flex-1">{notice(document, t)}</span>
+          <span className="min-w-0 flex-1">{notice(document, imageMime !== null, t)}</span>
           {document?.status === 'error' ? (
             <Button
               type="button"
@@ -496,14 +546,14 @@ function FileSurface({
   )
 }
 
-function notice(document: FileDocument | undefined, t: Translate): string {
+function notice(document: FileDocument | undefined, isImage: boolean, t: Translate): string {
   if (!document || document.status === 'loading') return t('file.loading')
   if (document.status === 'error') return document.error ?? t('file.unreadable')
   switch (document.preview) {
     case 'binary':
       return t('file.ignoredBinary')
     case 'too-large':
-      return t('file.ignoredLarge')
+      return isImage ? t('file.ignoredLargeImage') : t('file.ignoredLarge')
     case 'link':
       return t('file.ignoredSymlink')
     default:
