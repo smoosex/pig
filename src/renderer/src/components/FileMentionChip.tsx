@@ -216,7 +216,7 @@ export function FileMentionChip({ path, opensFile = false, className }: { path: 
               ? () => {
                   if (!cwd || missing) return
                   dismiss()
-                  void useSessionsStore.getState().openFileTab(cwd, path)
+                  void useSessionsStore.getState().openFileTab(cwd, path, { preview: true })
                 }
               : undefined
           }
@@ -285,7 +285,7 @@ function InteractiveFileReference({
       onOpenWorkspaceFile(targetCwd, relativePath, target.line)
       return
     }
-    await useSessionsStore.getState().openFileTab(targetCwd, relativePath)
+    await useSessionsStore.getState().openFileTab(targetCwd, relativePath, { preview: true })
     if (target.line) useFilesStore.getState().revealLine(targetCwd, relativePath, target.line)
   }
 

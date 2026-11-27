@@ -171,7 +171,7 @@ function OpenFileButton({ file, cwd }: { file: FileChangeSummary; cwd: string | 
       className="relative text-muted-foreground opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100"
       aria-label={t('turnChanges.openFile')}
       title={t('turnChanges.openFile')}
-      onClick={() => void useSessionsStore.getState().openFileTab(cwd, path)}
+      onClick={() => void useSessionsStore.getState().openFileTab(cwd, path, { preview: true })}
     >
       <SquareArrowOutUpRight />
     </Button>

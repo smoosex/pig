@@ -62,6 +62,26 @@ async function runFixture(): Promise<void> {
       'file tabs whose data-tab-key contains U+0000 still run their entry width animation'
     )
     assert.deepEqual([animations[0].keyframes[0].offset, animations[0].keyframes[0].flexBasis], [0, '0px'])
+    const previewFace = container.querySelector<HTMLElement>('[data-tab-preview]')!
+    assert.ok(previewFace, 'preview file tab carries preview marker')
+    assert.ok(previewFace.querySelector('[data-tab-label]')?.classList.contains('italic'), 'preview tab label is italic')
+
+    // Previewing another file reuses the same tab slot without collapsing or re-growing in the strip.
+    animations.length = 0
+    await act(async () => {
+      await store.getState().openFileTab('/p', 'src/next.md')
+    })
+    assert.equal(animations.length, 0, 'in-place preview replacement does not animate as close + open')
+    assert.equal(container.querySelector('[aria-hidden="true"].group\\/tab'), null, 'no leaving ghost tab is spawned')
+    assert.deepEqual(listed(), ['A', 'C', 'next.md'])
+
+    // Double-clicking the preview tab in the strip pins it in place.
+    const nextFace = container.querySelector<HTMLElement>('[data-tab-preview]')!
+    await act(async () => {
+      nextFace.dispatchEvent(new window.MouseEvent('dblclick', { bubbles: true }))
+    })
+    assert.equal(container.querySelector('[data-tab-preview]'), null, 'double-clicking a preview tab pins it')
+    assert.equal(nextFace.querySelector('[data-tab-label]')?.classList.contains('italic'), false)
 
     animations.length = 0
     await render([tab('D', '/q')], 'D', '/q')

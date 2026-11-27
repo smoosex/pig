@@ -86,13 +86,13 @@ export function SkillMentionChip({
     ? () => {
         if (!cwd) return
         if (relativePath) {
-          void useSessionsStore.getState().openFileTab(cwd, relativePath)
+          void useSessionsStore.getState().openFileTab(cwd, relativePath, { preview: true })
           return
         }
         void api?.listSkills?.().then((inventory) => {
           const match = inventory?.skills.find((skill) => skill.name === name)
           const rel = worktreeRelativePath(cwd, match?.filePath)
-          if (rel) void useSessionsStore.getState().openFileTab(cwd, rel)
+          if (rel) void useSessionsStore.getState().openFileTab(cwd, rel, { preview: true })
         }, () => {})
       }
     : undefined

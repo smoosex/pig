@@ -44,6 +44,7 @@ async function runFixture(name: string): Promise<void> {
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
   const painted: { name: string; contents: string }[] = []
   const mounted: string[] = []
+  let latestOnEditChange: ((event: { file: { contents: string } }) => void) | null = null
   const { mock } = await import('bun:test')
   mock.module('@pierre/diffs/edit', () => ({ Editor: class {} }))
   mock.module('../src/renderer/src/components/MarkdownText', () => ({
@@ -63,7 +64,9 @@ async function runFixture(name: string): Promise<void> {
     EditProvider: (props: { children?: unknown }) => React.createElement('div', null, props.children as never),
     Virtualizer: (props: { children?: unknown; className?: string }) =>
       React.createElement('div', { 'data-virtualizer': '', className: props.className }, props.children as never),
-    File: (props: { file: { name: string; contents: string } }) => {
+    File: (props: { file: { name: string; contents: string }; edit?: boolean; onEditChange?: (event: { file: { contents: string } }) => void }) => {
+      assert.equal(props.edit, true, 'file surface remains editable even in preview mode')
+      latestOnEditChange = props.onEditChange ?? null
       painted.push({ name: props.file.name, contents: props.file.contents })
       React.useEffect(() => {
         mounted.push(props.file.name)
@@ -115,6 +118,16 @@ async function runFixture(name: string): Promise<void> {
       { name: 'a.ts', contents: 'AAA alpha\n' },
       'the surface belongs to the file the tab names, not to whichever file was read last'
     )
+
+    // Editing inside a preview file tab updates the draft and automatically pins the tab.
+    const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
+    await useSessionsStore.getState().openFileTab(cwd, 'a.ts', { preview: true })
+    assert.equal(useSessionsStore.getState().openTabs[0]?.preview, true)
+    await React.act(async () => {
+      latestOnEditChange?.({ file: { contents: 'AAA alpha edited\n' } })
+    })
+    assert.equal(useFilesStore.getState().documents[fileKey(cwd, 'a.ts')]?.text, 'AAA alpha edited\n')
+    assert.equal(useSessionsStore.getState().openTabs[0]?.preview, false, 'editing a preview file promotes its tab to pinned')
     return
   }
 

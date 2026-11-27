@@ -1906,17 +1906,71 @@ async function runFixture(name: string): Promise<void> {
     })
 
     await state().openFileTab('/project', 'src/one.ts')
-    const fileTabId = `file:/project\u0000src/one.ts`
+    const oneTabId = `file:/project\u0000src/one.ts`
+    const twoTabId = `file:/project\u0000src/two.ts`
+    const threeTabId = `file:/project\u0000src/three.ts`
     assert.equal(openCalls, 0, 'a file tab opens no session')
-    assert.equal(state().activeTabId, fileTabId)
+    assert.equal(state().activeTabId, oneTabId)
     assert.equal(selectActiveSessionId(state()), null, 'a file tab is not a session, whoever asks')
     assert.equal(state().currentProjectCwd, '/project', 'the column keeps the worktree it belongs to')
     assert.equal(state().openTabs.length, 2)
     assert.equal(state().openTabs.at(-1)?.title, 'one.ts', 'the tab is named after the file')
     assert.equal(state().openTabs.at(-1)?.path, 'src/one.ts')
+    assert.equal(state().openTabs.at(-1)?.preview, true, 'opening defaults to preview mode')
+
+    // Previewing another file in the same worktree reuses the preview tab in place instead of stacking new tabs.
+    const { useFilesStore } = await import('../src/renderer/src/stores/files')
+    useFilesStore.setState({
+      documents: {
+        [`src/one.ts\u0000/project`]: {
+          status: 'ready', preview: 'text', text: 'one', saved: 'one', stamp: null, revision: 1, stale: false, bytes: 3, saving: false
+        }
+      }
+    })
+    await state().openFileTab('/project', 'src/two.ts')
+    assert.equal(state().openTabs.length, 2, 'previewing reuses the existing preview tab')
+    assert.equal(state().activeTabId, twoTabId)
+    assert.equal(state().openTabs.at(-1)?.path, 'src/two.ts')
+    assert.equal(state().openTabs.at(-1)?.preview, true)
+    assert.equal(useFilesStore.getState().documents[`src/one.ts\u0000/project`], undefined, 'replaced clean preview document is released')
+
+    // Double-clicking (`preview: false`) pins the preview tab; later previews open beside it instead of replacing it.
+    await state().openFileTab('/project', 'src/two.ts', { preview: false })
+    assert.equal(state().openTabs.length, 2)
+    assert.equal(state().openTabs.at(-1)?.preview, false, 'double-click pins the existing preview tab')
+    await state().openFileTab('/project', 'src/two.ts', { preview: true })
+    assert.equal(state().openTabs.at(-1)?.preview, false, 'clicking a reference to a pinned tab never demotes it back to preview')
+
+    await state().openFileTab('/project', 'src/three.ts')
+    assert.equal(state().openTabs.length, 3, 'a new preview opens beside pinned file tabs')
+    assert.equal(state().activeTabId, threeTabId)
+    assert.equal(state().openTabs.at(-1)?.preview, true)
+
+    // A preview tab sitting in a split pane retargets that pane in place when another file is previewed.
+    const { useSplitLayoutStore, paneOfTab } = await import('../src/renderer/src/stores/split-layout')
+    const splitPaneId = useSplitLayoutStore.getState().splitTab(meta.id, threeTabId, 'right')
+    await state().openFileTab('/project', 'src/one.ts')
+    assert.equal(state().openTabs.length, 3, 'reuses the split preview tab')
+    assert.equal(paneOfTab(useSplitLayoutStore.getState().groups, oneTabId)?.id, splitPaneId, 'split pane follows the retargeted preview tab')
+    useSplitLayoutStore.getState().reset()
+
+    // An unsaved draft in a preview tab is preserved and pinned rather than overwritten by the next preview.
+    useFilesStore.setState({
+      documents: {
+        [`src/one.ts\u0000/project`]: {
+          status: 'ready', preview: 'text', text: 'edited', saved: 'one', stamp: null, revision: 1, stale: false, bytes: 3, saving: false
+        }
+      }
+    })
+    await state().openFileTab('/project', 'src/three.ts')
+    assert.equal(state().openTabs.find((t) => t.id === oneTabId)?.preview, false, 'dirty preview tab is automatically pinned')
+    assert.equal(state().activeTabId, threeTabId)
+    state().closeTab(threeTabId)
+    state().closeTab(twoTabId)
+    useFilesStore.setState({ documents: {} })
 
     // Opening the same file again reveals the tab it already has; the same path in another worktree
-    // is another file, and gets a tab of its own.
+    // is another file, and gets a preview tab of its own without touching `/project`.
     await state().openFileTab('/project', 'src/one.ts')
     assert.equal(state().openTabs.length, 2)
     await state().openFileTab('/other', 'src/one.ts')
@@ -1925,10 +1979,10 @@ async function runFixture(name: string): Promise<void> {
     assert.equal(persistedOpenProjectSessions.workspaces.length, 0, 'a file tab is not remembered across launches')
 
     // Closing one hands the strip back to a tab of its own worktree, and closes no session with it.
-    await state().activateTab(fileTabId)
+    await state().activateTab(oneTabId)
     assert.equal(state().currentProjectCwd, '/project')
     assert.equal(selectActiveSessionId(state()), null)
-    state().closeTab(fileTabId)
+    state().closeTab(oneTabId)
     assert.equal(state().activeTabId, meta.id)
     assert.equal(selectActiveSessionId(state()), meta.id, 'the session is back behind the strip')
     assert.equal(state().activeTabByCwd['/project'], meta.id)

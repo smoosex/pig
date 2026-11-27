@@ -1,7 +1,7 @@
 /** Tab lifecycle, project-workspace restoration, and lazy session loading. */
 import { api, type DiffScope, type OpenSessionRef, type OpenToolTab, type SessionMeta } from '../../ipc/api'
 import { scopeLabel, useDiffStore } from '../diff'
-import { useFilesStore } from '../files'
+import { fileKey, isDirty, useFilesStore } from '../files'
 import { renamedPath } from '../../lib/worktree-paths'
 import { useComposerDraftsStore } from '../composer-drafts'
 import { isSubagentActive, useSubagentStore } from '../subagents'
@@ -71,6 +71,7 @@ export const createTabsSlice: SessionSlice<
   | 'attachAgentSession'
   | 'openChangesTab'
   | 'openFileTab'
+  | 'pinFileTab'
   | 'openTurnDiffTab'
   | 'openBrowserTab'
   | 'adoptBrowserPopup'
@@ -742,30 +743,113 @@ export const createTabsSlice: SessionSlice<
     },
 
     /**
-     * One tab per file, and the title is the file's own name: the path lives in the worktree, so two
-     * worktrees can hold the same relative path without sharing a tab.
+     * One tab per file, and at most one preview file tab per scope: single-clicks and conversation
+     * references reuse the scope's preview tab in place, while double-clicks (`preview: false`) or edits
+     * pin the tab so later previews open beside it instead of replacing it.
      */
-    openFileTab: async (cwd, path) => {
+    openFileTab: async (cwd, path, options) => {
+      const preview = options?.preview ?? true
       const id = fileTabId(cwd, path)
       ++selectionVersion
+      let replaced = null as { id: string; cwd: string; path?: string } | null
       set((state) => {
         const existing = state.openTabs.find((tab) => tab.id === id)
-        const tab: OpenTab = existing ?? {
+        if (existing) {
+          const nextTab = !preview && existing.preview ? { ...existing, preview: false } : existing
+          const projectCwd = isChatScope(nextTab) ? null : (nextTab.cwd || null)
+          return {
+            openTabs: nextTab === existing
+              ? state.openTabs
+              : state.openTabs.map((item) => (item.id === id ? nextTab : item)),
+            ...activeTabPatch(state, id, projectCwd),
+            currentProjectCwd: projectCwd
+          }
+        }
+
+        const nextTab: OpenTab = {
           id,
           cwd,
           path,
           title: path.slice(path.lastIndexOf('/') + 1),
           kind: 'file' as const,
-          loadState: 'ready' as const
+          loadState: 'ready' as const,
+          preview
         }
-        const projectCwd = isChatScope(tab) ? null : (tab.cwd || null)
+        const projectCwd = isChatScope(nextTab) ? null : (nextTab.cwd || null)
+        if (!preview) {
+          return {
+            openTabs: [...state.openTabs, nextTab],
+            ...activeTabPatch(state, id, projectCwd),
+            currentProjectCwd: projectCwd
+          }
+        }
+
+        const filesState = useFilesStore.getState()
+        const scopeIds = new Set(sameScopeTabs(state.openTabs, nextTab).map((item) => item.id))
+        let reusableIndex = -1
+        let pinnedDirty = false
+        for (let i = 0; i < state.openTabs.length; i++) {
+          const item = state.openTabs[i]
+          if (!scopeIds.has(item.id) || item.kind !== 'file' || !item.preview) continue
+          const doc = item.path ? filesState.documents[fileKey(item.cwd, item.path)] : undefined
+          if (doc && (isDirty(doc) || doc.saving)) {
+            pinnedDirty = true
+            continue
+          }
+          reusableIndex = i
+          break
+        }
+
+        let openTabs: OpenTab[]
+        if (reusableIndex !== -1) {
+          const target = state.openTabs[reusableIndex]
+          replaced = { id: target.id, cwd: target.cwd, path: target.path }
+          openTabs = state.openTabs.map((item, index) => {
+            if (index === reusableIndex) {
+              return { ...nextTab, ...(target.chatScope ? { chatScope: target.chatScope } : {}) }
+            }
+            if (pinnedDirty && scopeIds.has(item.id) && item.kind === 'file' && item.preview) {
+              return { ...item, preview: false }
+            }
+            return item
+          })
+        } else if (pinnedDirty) {
+          openTabs = [
+            ...state.openTabs.map((item) =>
+              scopeIds.has(item.id) && item.kind === 'file' && item.preview
+                ? { ...item, preview: false }
+                : item
+            ),
+            nextTab
+          ]
+        } else {
+          openTabs = [...state.openTabs, nextTab]
+        }
+
         return {
-          openTabs: existing ? state.openTabs : [...state.openTabs, tab],
+          openTabs,
           ...activeTabPatch(state, id, projectCwd),
           currentProjectCwd: projectCwd
         }
       })
+
+      const layout = useSplitLayoutStore.getState()
+      if (replaced && replaced.id !== id) {
+        layout.renameTabId(replaced.id, id)
+        if (replaced.path) useFilesStore.getState().releaseDocument(replaced.cwd, replaced.path)
+      }
+      const pane = paneOfTab(useSplitLayoutStore.getState().groups, id)
+      if (pane) useSplitLayoutStore.getState().setActivePane(pane.id)
     },
+
+    pinFileTab: (tabId) =>
+      set((state) => {
+        const target = state.openTabs.find((tab) => tab.id === tabId)
+        if (!target || target.kind !== 'file' || !target.preview) return state
+        return {
+          openTabs: state.openTabs.map((tab) => (tab.id === tabId ? { ...tab, preview: false } : tab))
+        }
+      }),
 
     /**
      * Docks the session's history diff pane to the right of the session, or retargets the pane it

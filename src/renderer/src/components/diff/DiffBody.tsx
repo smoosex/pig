@@ -97,7 +97,7 @@ function useLineFollow(cwd: string, path: string) {
           // placed with the app's own spacing and colors rather than the library's built-in button.
           className="size-4 rounded-sm bg-glass-composer-background text-muted-foreground solid:bg-code-background hover:bg-accent solid:hover:bg-accent hover:text-accent-foreground"
           onClick={() => {
-            void openFileTab(cwd, path)
+            void openFileTab(cwd, path, { preview: true })
             revealLine(cwd, path, row.lineNumber)
           }}
         >

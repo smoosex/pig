@@ -225,7 +225,7 @@ async function runDomFixture(): Promise<void> {
   GlobalRegistrator.register({ url: 'http://localhost' })
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 
-  const openedTabs: { cwd: string; path: string }[] = []
+  const openedTabs: { cwd: string; path: string; preview?: boolean }[] = []
   const openedExternally: string[] = []
   const workspaceExternally: { cwd: string; path: string }[] = []
 
@@ -273,7 +273,7 @@ async function runDomFixture(): Promise<void> {
   const React = await import('react')
   const { act, createElement } = React
   const { createRoot } = await import('react-dom/client')
-  const { FileMentionProvider } = await import('../src/renderer/src/components/FileMentionChip')
+  const { FileMentionChip, FileMentionProvider } = await import('../src/renderer/src/components/FileMentionChip')
   const { Answer } = await import('../src/renderer/src/components/turn/TurnMessages')
   const { useSessionsStore } = await import('../src/renderer/src/stores/sessions')
   const { useFilesStore } = await import('../src/renderer/src/stores/files')
@@ -282,12 +282,14 @@ async function runDomFixture(): Promise<void> {
 
   const projectCwd = '/Users/smoose/Documents/小说/故人西来'
   useSettingsStore.setState({ localeSetting: 'zh-CN', locale: 'zh-CN' })
+  const realOpenFileTab = useSessionsStore.getState().openFileTab
   useSessionsStore.setState({
     projects: [{ cwd: projectCwd, name: '故人西来', sessions: [], worktrees: [] }],
     openTabs: [{ id: 's1', cwd: projectCwd, title: '故人西来', kind: 'project', loadState: 'ready' }],
     runtime: { s1: { leafId: 'leaf-1', isStreaming: false } as never },
-    openFileTab: async (cwd: string, path: string) => {
-      openedTabs.push({ cwd, path })
+    openFileTab: async (cwd: string, path: string, options?: { preview?: boolean }) => {
+      openedTabs.push({ cwd, path, preview: options?.preview })
+      await realOpenFileTab(cwd, path, options)
     }
   })
   useFileChangesStore.setState({
@@ -335,6 +337,7 @@ async function runDomFixture(): Promise<void> {
         createElement(
           FileMentionProvider,
           { value: { cwd: projectCwd, sessionId: 's1' } },
+          createElement(FileMentionChip, { path: '大纲.md', opensFile: true }),
           createElement(Answer, { blocks: [{ type: 'text', text: markdown }] })
         )
       )
@@ -386,19 +389,21 @@ async function runDomFixture(): Promise<void> {
     assert.ok(card.textContent?.includes('+371'))
     assert.ok(card.textContent?.includes('−2'))
 
-    // Clicking 《两口井》 opens it in a workspace file tab.
+    // Clicking 《两口井》 opens it in a workspace preview file tab.
     await act(async () => {
       links[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    assert.deepEqual(openedTabs, [{ cwd: projectCwd, path: '正文/002-卷一-第二章-两口井.md' }])
+    assert.deepEqual(openedTabs, [{ cwd: projectCwd, path: '正文/002-卷一-第二章-两口井.md', preview: true }])
+    assert.equal(useSessionsStore.getState().openTabs.filter((t) => t.kind === 'file').length, 1)
 
-    // Clicking file:///...#L42 inside the workspace opens the file tab AND reveals line 42.
+    // Clicking file:///...#L42 inside the workspace reuses the same preview tab AND reveals line 42.
     await act(async () => {
       links[1]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    assert.deepEqual(openedTabs[1], { cwd: projectCwd, path: 'src/window.ts' })
+    assert.deepEqual(openedTabs[1], { cwd: projectCwd, path: 'src/window.ts', preview: true })
+    assert.equal(useSessionsStore.getState().openTabs.filter((t) => t.kind === 'file').length, 1, 'reuses the single preview tab')
     assert.deepEqual(useFilesStore.getState().reveal, {
       cwd: projectCwd,
       path: 'src/window.ts',
@@ -420,12 +425,25 @@ async function runDomFixture(): Promise<void> {
     })
     assert.deepEqual(workspaceExternally, [{ cwd: projectCwd, path: '正文' }])
 
-    // Clicking the inline-code path `/Users/.../红线啦啦啦.md` resolves to the open workspace and opens a file tab.
+    // Clicking the inline-code path `/Users/.../红线啦啦啦.md` resolves to the open workspace and reuses the preview tab.
     await act(async () => {
       codeFileLinks[0]!.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
       await new Promise((resolve) => setTimeout(resolve, 10))
     })
-    assert.deepEqual(openedTabs[2], { cwd: projectCwd, path: '红线啦啦啦.md' })
+    assert.deepEqual(openedTabs[2], { cwd: projectCwd, path: '红线啦啦啦.md', preview: true })
+    assert.equal(useSessionsStore.getState().openTabs.filter((t) => t.kind === 'file').length, 1)
+
+    // Clicking an `@file` mention chip in a user message also previews in the same tab.
+    const mentionChip = container.querySelector<HTMLButtonElement>('button[aria-label="大纲.md"]')!
+    await act(async () => {
+      mentionChip.click()
+      await new Promise((resolve) => setTimeout(resolve, 10))
+    })
+    assert.deepEqual(openedTabs[3], { cwd: projectCwd, path: '大纲.md', preview: true })
+    const fileTabs = useSessionsStore.getState().openTabs.filter((t) => t.kind === 'file')
+    assert.equal(fileTabs.length, 1, 'all conversation file references share one preview tab')
+    assert.equal(fileTabs[0]?.path, '大纲.md')
+    assert.equal(fileTabs[0]?.preview, true)
   } finally {
     await act(async () => {
       root.unmount()
