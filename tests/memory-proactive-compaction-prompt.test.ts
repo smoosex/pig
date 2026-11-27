@@ -15,6 +15,7 @@ import { join } from 'node:path'
 import type { BrowserWindow } from 'electron'
 import type { AgentSession, AgentSessionEvent } from '@earendil-works/pi-coding-agent'
 import { createAssistantMessageEventStream } from '@earendil-works/pi-ai'
+import type { Entry } from '../src/main/features/memory/session-ledger/types'
 import { runSelf } from './helpers/subprocess.ts'
 
 async function fixture(): Promise<void> {
@@ -27,6 +28,9 @@ async function fixture(): Promise<void> {
   const { getMemoryDefaults } = await import('../src/main/features/observational-memory-settings')
   const { Runtime, registerMemoryRuntime } = await import('../src/main/features/memory/runtime')
   const { awaitCompactionBeforePrompt, isProactiveMemoryCompaction } = await import('../src/main/features/memory/proactive-compaction')
+  const { maybeTriggerCompaction } = await import('../src/main/features/memory/hooks/compaction-trigger')
+  const { memoryStatus } = await import('../src/main/features/memory/details')
+  const { sessionAutoCompactAt } = await import('../src/main/pi/session-controls')
   const { isObservationalMemoryEnabledForCwd } = await import('../src/main/features/runtime')
   const { bridgeEvents } = await import('../src/main/pi/event-bridge')
 
@@ -58,6 +62,84 @@ async function fixture(): Promise<void> {
   assert.equal(isObservationalMemoryEnabledForCwd(projectCwd), false)
   assert.equal(isObservationalMemoryEnabledForCwd(chatCwd), true)
   assert.equal(isObservationalMemoryEnabledForCwd(botCwd), true)
+
+  // 2b. Ratio mode (70%) uses real context usage rather than chars/4 observed estimates, guards keepRecentTokens,
+  //     and syncs UI autoCompactAt + Memory Status reporting.
+  const piSettings = {
+    getCompactionSettings: () => ({ enabled: true, reserveTokens: 16_384, keepRecentTokens: 20_000 })
+  } as never
+  assert.equal(
+    sessionAutoCompactAt(200_000, { provider: 'p', id: 'm' }, { sessionId: 'chat-1', cwd: chatCwd } as never, piSettings),
+    140_000,
+    'active OM ratio mode lowers UI auto-compaction marker to 70% of contextWindow'
+  )
+  assert.equal(
+    sessionAutoCompactAt(200_000, { provider: 'p', id: 'm' }, { sessionId: 'proj-off', cwd: projectCwd } as never, piSettings),
+    183_616,
+    'project session with enableInProjects=false keeps Pi native reserve threshold'
+  )
+
+  const ratioRuntime = new Runtime()
+  ratioRuntime.configLoaded = true
+  Object.assign(ratioRuntime.config, {
+    compactAfterTokensMode: 'ratio',
+    compactAfterTokensRatio: 0.7,
+    piKeepRecentTokens: 20,
+    showCompactionNotifications: false
+  })
+  registerMemoryRuntime('ratio-session', ratioRuntime)
+  try {
+    // Chinese/system-prompt heavy session: chars/4 observed source is tiny (< 100 tokens), while real context usage is 71% (142K / 200K)
+    const smallEntries: Entry[] = [
+      { type: 'message', id: 'm1', message: { role: 'user', content: '短消息', timestamp: 1 } }
+    ]
+    let triggered = 0
+    let contextTokens: number | null = 142_000
+    let entries: Entry[] = smallEntries
+    const triggerCtx = {
+      cwd: chatCwd,
+      model: { provider: 'p', id: 'm', contextWindow: 200_000 },
+      getContextUsage: () => ({ tokens: contextTokens, contextWindow: 200_000 }),
+      sessionManager: { getBranch: () => entries },
+      isIdle: () => true,
+      compact: (opts: { onComplete: () => void }) => {
+        triggered += 1
+        opts.onComplete()
+      }
+    }
+
+    // History is smaller than piKeepRecentTokens (20), so Pi could not cut anything yet -> must not throw "Nothing to compact"
+    maybeTriggerCompaction(ratioRuntime, triggerCtx as never)
+    await new Promise((r) => setTimeout(r, 10))
+    assert.equal(triggered, 0, 'skips proactive compaction when message history cannot exceed keepRecentTokens')
+
+    // Once history has enough messages to cut past keepRecentTokens, 71% real context usage triggers compaction even with 0 observed tokens
+    entries = [
+      { type: 'message', id: 'm1', message: { role: 'user', content: '第一轮中文上下文，用于验证按真实窗口 70% 比例触发主动压缩。', timestamp: 1 } },
+      { type: 'message', id: 'm2', message: { role: 'assistant', content: [{ type: 'text', text: '这里是足够超过最近保留阈值的最新回复内容，确保切分点之前存在可压缩历史消息。'.repeat(3) }], timestamp: 2 } }
+    ]
+    assert.match(
+      memoryStatus('ratio-session', entries as never, 200_000, chatCwd, 142_000),
+      /Next compaction:\s+~142,000 \/ 140,000 context tokens \(101%\)/
+    )
+    assert.match(
+      memoryStatus('ratio-session', entries as never, 200_000, chatCwd, null),
+      /observed source tokens/,
+      'falls back to source tokens immediately after compaction when contextTokens is null'
+    )
+
+    maybeTriggerCompaction(ratioRuntime, triggerCtx as never)
+    await new Promise((r) => setTimeout(r, 10))
+    assert.equal(triggered, 1, 'triggers proactive compaction at >=70% real context usage')
+
+    // Below 70% real context usage (e.g. 69%), does not trigger
+    contextTokens = 138_000
+    maybeTriggerCompaction(ratioRuntime, triggerCtx as never)
+    await new Promise((r) => setTimeout(r, 10))
+    assert.equal(triggered, 1, 'does not trigger below 70% real context usage')
+  } finally {
+    registerMemoryRuntime('ratio-session', undefined)
+  }
 
   // 3. Proactive compaction event tagging (`reason: 'memory'`) + automatic abort when user sends a prompt
   const listeners = new Set<(event: AgentSessionEvent) => void>()

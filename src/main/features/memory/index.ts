@@ -24,10 +24,12 @@ export default async function observationalMemory(pi: ExtensionAPI) {
 		runtime.branchRevision++;
 		runtime.cancelConsolidation();
 		runtime.observerEmptyBackoff = undefined;
+		runtime.lastFailedCompactionLeafId = undefined;
 	});
 	pi.on('session_shutdown', (_event, ctx) => {
 		runtime.cancelConsolidation();
 		runtime.proactiveCompactionRunning = false;
+		runtime.lastFailedCompactionLeafId = undefined;
 		runtime.notifications = undefined;
 		registerMemoryRuntime(ctx.sessionManager.getSessionId());
 	});

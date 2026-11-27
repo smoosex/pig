@@ -121,6 +121,7 @@ export class Runtime {
 	compactInFlight = false;
 	proactiveCompactionRunning = false;
 	proactiveCompactionAborted = false;
+	lastFailedCompactionLeafId: string | undefined;
 	branchRevision = 0;
 	compactHookInFlight = false;
 	resolveFailureNotified = false;

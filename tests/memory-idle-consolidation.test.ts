@@ -92,8 +92,93 @@ async function idleFixture(cancel: boolean): Promise<void> {
   assert.equal(runtime.compactInFlight, false)
 }
 
+async function turnEndHandoffFixture(): Promise<void> {
+  const { mock } = await import('bun:test')
+  const entered = Promise.withResolvers<void>()
+  const released = Promise.withResolvers<void>()
+  const observations: Observation[] = [{
+    id: 'aaaaaaaaaaaa', content: 'Covered source', timestamp: '2026-01-01T00:00:00.000Z',
+    relevance: 'medium', sourceEntryIds: ['turn-1'], tokenCount: 10
+  }]
+  mock.module('../src/main/features/memory/agents/observer/agent.ts', () => ({
+    ObserverStreamError: class extends Error {},
+    runObserver: async () => {
+      entered.resolve()
+      await released.promise
+      return observations
+    }
+  }))
+  const { registerConsolidationTrigger } = await import('../src/main/features/memory/hooks/consolidation-trigger')
+  const { maybeTriggerCompaction, registerCompactionTrigger } = await import('../src/main/features/memory/hooks/compaction-trigger')
+  const runtime = new Runtime()
+  runtime.configLoaded = true
+  Object.assign(runtime.config, {
+    consolidateWhenIdle: false,
+    passive: false,
+    observeAfterTokens: 1,
+    reflectAfterTokens: 100_000,
+    compactAfterTokensMode: 'ratio',
+    compactAfterTokensRatio: 0.7,
+    piKeepRecentTokens: 10,
+    showWorkerNotifications: false,
+    showCompactionNotifications: false
+  })
+  const entries: Entry[] = [
+    { type: 'message', id: 'turn-1', message: { role: 'user', content: 'Earlier message exceeding keepRecentTokens budget so Pi can cut here.', timestamp: 1 } },
+    { type: 'message', id: 'turn-2', message: { role: 'assistant', content: [{ type: 'text', text: 'Recent reply kept in the tail after compaction.' }], timestamp: 2 } }
+  ]
+  const handlers = new Map<string, Array<(...args: any[]) => unknown>>()
+  const writes: string[] = []
+  const pi = {
+    on: (name: string, handler: (...args: any[]) => unknown) => handlers.set(name, [...(handlers.get(name) ?? []), handler]),
+    appendEntry: (customType: string, data: unknown) => {
+      writes.push(customType)
+      entries.push({ type: 'custom', id: `write-${writes.length}`, customType, data })
+    }
+  } as unknown as ExtensionAPI
+  let idle = false
+  let compactions = 0
+  const ctx = {
+    cwd: '/project',
+    model: { provider: 'test', contextWindow: 200_000 },
+    modelRegistry: { getApiKeyAndHeaders: async () => ({ ok: true, apiKey: 'key' }) },
+    getContextUsage: () => ({ tokens: 145_000, contextWindow: 200_000 }),
+    sessionManager: { getBranch: () => entries, getSessionId: () => 'turn-end-handoff' },
+    isIdle: () => idle,
+    compact: (options: { onComplete: () => void }) => {
+      assert.equal(runtime.consolidationInFlight, false, 'compaction waits for turn_end observer run')
+      assert.deepEqual(writes, ['om.observations.recorded'], 'observer coverage is recorded before compaction')
+      compactions++
+      options.onComplete()
+    }
+  }
+  registerConsolidationTrigger(pi, runtime, {
+    afterIdleConsolidation: (context) => maybeTriggerCompaction(runtime, context as Parameters<typeof maybeTriggerCompaction>[1])
+  })
+  registerCompactionTrigger(pi, runtime)
+  const emit = async (event: string) => {
+    for (const handler of handlers.get(event) ?? []) await handler({}, ctx)
+  }
+
+  // `turn_end` launches consolidation while the agent is still busy; `agent_settled` arrives before observer finishes.
+  await emit('turn_end')
+  await entered.promise
+  const promise = runtime.consolidationPromise!
+  idle = true
+  await emit('agent_settled')
+  await new Promise((done) => setTimeout(done, 5))
+  assert.equal(compactions, 0, 'must not start compaction while turn_end observer is still running')
+
+  released.resolve()
+  await promise
+  await new Promise((done) => setTimeout(done, 5))
+  assert.equal(compactions, 1, 'finishing turn_end consolidation while idle triggers 70% proactive compaction')
+}
+
 if (process.argv.includes('--idle-fixture')) {
   await idleFixture(process.argv.includes('--cancel'))
+} else if (process.argv.includes('--turn-end-handoff-fixture')) {
+  await turnEndHandoffFixture()
 } else {
   for (const cancel of [false, true]) {
     test(`idle consolidation ${cancel ? 'pauses on agent_start without scheduling compaction' : 'finishes before native compaction starts'}`, async () => {
@@ -105,6 +190,15 @@ if (process.argv.includes('--idle-fixture')) {
       assert.equal(code, 0, stderr || stdout)
     }, 15_000)
   }
+
+  test('default background consolidation launched at turn_end triggers proactive compaction once it settles while idle', async () => {
+    const { exitCode: code, stdout, stderr } = await runSelf(
+      import.meta.path,
+      ['--turn-end-handoff-fixture'],
+      { timeoutMs: 10_000 }
+    )
+    assert.equal(code, 0, stderr || stdout)
+  }, 15_000)
 
   test('deferred compaction rechecks idle consolidation before touching the native compactor', async () => {
     const { maybeTriggerCompaction } = await import('../src/main/features/memory/hooks/compaction-trigger')

@@ -10,7 +10,8 @@ import {
   sessionEntryToContextMessages,
   type AgentSession,
   type SessionContext,
-  type SessionEntry
+  type SessionEntry,
+  type SettingsManager
 } from '@earendil-works/pi-coding-agent'
 import { clampThinkingLevel } from '@earendil-works/pi-ai'
 import type {
@@ -20,6 +21,9 @@ import type {
   ThinkingLevel as SessionThinkingLevel
 } from '../../shared/api'
 import type { MemorySession, PendingSession, SessionFileSession, SessionState } from './session-state'
+import { isObservationalMemoryEnabledForCwd } from '../features/runtime'
+import { loadConfig, resolveCompactAfterTokens } from '../features/memory/config'
+import { memoryRuntime } from '../features/memory/runtime'
 import { readEntryById, readRows, readRowsStrict, type SessionFileEntry, type SessionFileIndex } from './session-jsonl'
 import { sessionIndex } from './session-source'
 import { followUpMessagesForDisplay, steeringMessagesForDisplay } from './event-bridge'
@@ -84,6 +88,32 @@ function estimateContextTokens(messages: SessionContext['messages']): number {
 }
 
 /**
+ * Effective auto-compaction boundary in context-window tokens: the earlier of Pi's own reserve
+ * threshold and OM's proactive ratio threshold when OM is active on this session.
+ */
+export function sessionAutoCompactAt(
+  contextWindow: number,
+  model: { provider: string; id: string } | null,
+  session?: SessionState,
+  settings?: SettingsManager
+): number | null {
+  const piCompactAt = autoCompactAt(contextWindow, model, settings)
+  if (!session || contextWindow <= 0) return piCompactAt
+  try {
+    const runtime = memoryRuntime(session.sessionId)
+    if ('agentSession' in session ? !runtime : !isObservationalMemoryEnabledForCwd(session.cwd)) {
+      return piCompactAt
+    }
+    const config = runtime?.configLoaded ? runtime.config : loadConfig(session.cwd)
+    if (config.passive || config.compactAfterTokensMode !== 'ratio') return piCompactAt
+    const omCompactAt = resolveCompactAfterTokens(config, contextWindow)
+    return piCompactAt === null ? omCompactAt : Math.min(piCompactAt, omCompactAt)
+  } catch {
+    return piCompactAt
+  }
+}
+
+/**
  * What AgentSession.getContextUsage reports, for a session that is not built yet: the last reported
  * usage plus the estimated messages after it, and unknown until an assistant replies past the last
  * compaction.
@@ -91,11 +121,12 @@ function estimateContextTokens(messages: SessionContext['messages']): number {
 function persistedContextUsage(
   model: SessionControls['model'],
   messages: SessionContext['messages'],
-  branch: SessionEntry[]
+  branch: SessionEntry[],
+  session: MemorySession
 ): SessionContextUsage | null {
   const contextWindow = model?.contextWindow ?? 0
   if (contextWindow <= 0) return null
-  const compactAt = autoCompactAt(contextWindow, model)
+  const compactAt = sessionAutoCompactAt(contextWindow, model, session)
   const compaction = getLatestCompactionEntry(branch)
   if (compaction) {
     const after = branch.slice(branch.lastIndexOf(compaction) + 1)
@@ -129,7 +160,7 @@ function pendingControls(session: MemorySession): SessionControls {
     ),
     modelThinkingLevel: modelThinkingFromSettings(model),
     thinkingLevels: picker,
-    contextUsage: persistedContextUsage(model, context.messages, branch),
+    contextUsage: persistedContextUsage(model, context.messages, branch, session),
     followUpMessages: [],
     steeringMessages: []
   }
@@ -205,11 +236,12 @@ export function fileSettings(file: IndexedFile): {
  */
 export function fileContextUsage(
   file: IndexedFile,
-  model: SessionControls['model']
+  model: SessionControls['model'],
+  session?: SessionFileSession
 ): SessionContextUsage | null {
   const contextWindow = model?.contextWindow ?? 0
   if (contextWindow <= 0) return null
-  const compactAt = autoCompactAt(contextWindow, model)
+  const compactAt = sessionAutoCompactAt(contextWindow, model, session)
   const rows = file.index.branch
   const compactionAt = lastRowOf(rows, (row) => row.type === 'compaction')
   let usage: ReturnType<typeof assistantUsage> = undefined
@@ -257,7 +289,7 @@ function fileControls(
     ),
     modelThinkingLevel: modelThinkingFromSettings(model),
     thinkingLevels: picker,
-    contextUsage: fileContextUsage(file, model),
+    contextUsage: fileContextUsage(file, model, session),
     followUpMessages: [],
     steeringMessages: []
   }
@@ -321,9 +353,10 @@ export async function controlsFor(session: SessionState): Promise<SessionControl
         ? {
             tokens: usage.tokens,
             contextWindow: usage.contextWindow,
-            autoCompactAt: autoCompactAt(
+            autoCompactAt: sessionAutoCompactAt(
               usage.contextWindow,
               session.agentSession.model ?? null,
+              session,
               session.agentSession.settingsManager
             ),
             percent: usage.percent

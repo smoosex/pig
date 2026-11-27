@@ -272,7 +272,7 @@ export function registerConsolidationTrigger(pi: ExtensionAPI, runtime: Runtime,
 
 	pi.on("agent_start", (_event: unknown, ctx: ConsolidationEventCtx) => {
 		if (!idleMode(ctx)) {
-			maybeLaunchConsolidation(pi, runtime, ctx);
+			maybeLaunchConsolidation(pi, runtime, ctx, () => hooks.afterIdleConsolidation?.(ctx));
 			return;
 		}
 		// The session model is about to be called: get memory workers off the
@@ -288,12 +288,11 @@ export function registerConsolidationTrigger(pi: ExtensionAPI, runtime: Runtime,
 	});
 	pi.on("turn_end", (_event: unknown, ctx: ConsolidationEventCtx) => {
 		if (idleMode(ctx)) return;
-		maybeLaunchConsolidation(pi, runtime, ctx);
+		maybeLaunchConsolidation(pi, runtime, ctx, () => hooks.afterIdleConsolidation?.(ctx));
 	});
 	pi.on("agent_settled", (_event: unknown, ctx: ConsolidationEventCtx) => {
-		if (!idleMode(ctx)) return;
 		const launched = maybeLaunchConsolidation(pi, runtime, ctx, () => hooks.afterIdleConsolidation?.(ctx));
-		if (!launched) hooks.afterIdleConsolidation?.(ctx);
+		if (!launched && idleMode(ctx)) hooks.afterIdleConsolidation?.(ctx);
 	});
 }
 

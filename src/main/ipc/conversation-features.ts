@@ -90,9 +90,9 @@ export function registerConversationFeaturesIpc(): void {
     return withSource(sessionId, async source => {
       const session = ownedSession(event, sessionId)
       if (kind === 'view') return memoryView(source.branch() as Entry[], full)
-      const { model } = await controlsFor(session)
+      const { model, contextUsage } = await controlsFor(session)
       if (ownedSession(event, sessionId) !== session) throw new Error('Session changed while reading memory')
-      return memoryStatus(sessionId, source.branch() as Entry[], model?.contextWindow, session.cwd)
+      return memoryStatus(sessionId, source.branch() as Entry[], model?.contextWindow, session.cwd, contextUsage?.tokens)
     }, () => { ownedSession(event, sessionId) })
   })
 }

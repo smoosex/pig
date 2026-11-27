@@ -7,7 +7,7 @@ import {
   rawTokensSinceLastCompaction, rawTokensSinceObservationCoverage,
   reflectionToSummaryLine, visibleProjection, type Entry, type Projection
 } from './session-ledger/index.js'
-import { compactionProgress, progressLabel } from './hooks/compaction-trigger.js'
+import { compactionProgress, progressLabel, usesContextRatioProgress } from './hooks/compaction-trigger.js'
 
 function pct(value: number, total: number): number {
   return total > 0 ? Math.round(value / total * 100) : 0
@@ -17,7 +17,13 @@ function totalTokens(items: { tokenCount: number }[]): number {
   return items.reduce((sum, item) => sum + item.tokenCount, 0)
 }
 
-export function memoryStatus(sessionId: string, entries: Entry[], contextWindow?: number, cwd?: string): string {
+export function memoryStatus(
+  sessionId: string,
+  entries: Entry[],
+  contextWindow?: number,
+  cwd?: string,
+  contextTokens?: number | null
+): string {
   const runtime = memoryRuntime(sessionId)
   const config = runtime?.configLoaded ? runtime.config : loadConfig(cwd)
   const folded = foldLedger(entries)
@@ -33,9 +39,19 @@ export function memoryStatus(sessionId: string, entries: Entry[], contextWindow?
   const compactThreshold = resolveCompactAfterTokens(config, contextWindow)
   const observationProgress = rawTokensSinceObservationCoverage(entries)
   const reflectionProgress = observedTokensSinceReflectionCoverage(entries)
-  const compactionProgressTokens = runtime ? compactionProgress(runtime, entries) : rawTokensSinceLastCompaction(entries)
+  const progressCtx = { contextTokens, contextWindow }
+  const compactionProgressTokens = runtime
+    ? compactionProgress(runtime, entries, progressCtx)
+    : usesContextRatioProgress(config, progressCtx)
+      ? progressCtx.contextTokens
+      : rawTokensSinceLastCompaction(entries)
   const unobservedSinceCompaction = Math.max(0, rawTokensSinceLastCompaction(entries) - observedTokensSinceLastCompaction(entries))
-  const progressKind = runtime ? progressLabel(runtime) : 'estimated'
+  const progressKind = runtime
+    ? progressLabel(runtime, progressCtx)
+    : usesContextRatioProgress(config, progressCtx)
+      ? 'context'
+      : 'estimated'
+  const progressUnit = progressKind === 'context' ? 'context tokens' : `${progressKind} source tokens`
   const lines = [
     '── Memory ──',
     `Observations: ${folded.observations.length} recorded / ${folded.droppedObservationIds.size} dropped / ${folded.activeObservations.length} active / ${visible.observations.length} visible${observationSuffix ? ` ${observationSuffix}` : ''}`,
@@ -45,7 +61,7 @@ export function memoryStatus(sessionId: string, entries: Entry[], contextWindow?
     '── Activity ──',
     `Next observation: ~${observationProgress.toLocaleString()} / ${config.observeAfterTokens.toLocaleString()} tokens (${pct(observationProgress, config.observeAfterTokens)}%)`,
     `Next reflection:  ~${reflectionProgress.toLocaleString()} / ${config.reflectAfterTokens.toLocaleString()} observed tokens (${pct(reflectionProgress, config.reflectAfterTokens)}%)`,
-    `Next compaction:  ~${compactionProgressTokens.toLocaleString()} / ${compactThreshold.toLocaleString()} ${progressKind} source tokens (${pct(compactionProgressTokens, compactThreshold)}%)`,
+    `Next compaction:  ~${compactionProgressTokens.toLocaleString()} / ${compactThreshold.toLocaleString()} ${progressUnit} (${pct(compactionProgressTokens, compactThreshold)}%)`,
     `Observer backlog: ~${unobservedSinceCompaction.toLocaleString()} unobserved source tokens since the compaction boundary`,
     `Visible observation pool: ~${totalTokens(visible.observations).toLocaleString()} / ${config.observationsPoolMaxTokens.toLocaleString()} tokens (${pct(totalTokens(visible.observations), config.observationsPoolMaxTokens)}%)`,
     `Active observation pool: ~${pool.observationTokens.toLocaleString()} / ${config.observationsPoolTargetTokens.toLocaleString()} target tokens (${pct(pool.observationTokens, config.observationsPoolTargetTokens)}%)`,

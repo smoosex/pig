@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import type { ModelThinkingLevel } from "@earendil-works/pi-ai";
-import { getAgentDir } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_COMPACTION_SETTINGS, getAgentDir } from "@earendil-works/pi-coding-agent";
 import { memorySettingsPath } from "./paths.js";
 
 export interface ConfiguredModel {
@@ -120,6 +120,8 @@ export interface Config {
 	 * since nothing else would compact a session whose observer has stalled.
 	 */
 	piAutoCompactionEnabled: boolean;
+	/** Pi's `compaction.keepRecentTokens`, used to avoid triggering proactive compaction before Pi can cut a message range. */
+	piKeepRecentTokens: number;
 }
 
 export const DEFAULTS: Config = {
@@ -140,6 +142,7 @@ export const DEFAULTS: Config = {
 	passive: false,
 	debugLog: false,
 	piAutoCompactionEnabled: true,
+	piKeepRecentTokens: DEFAULT_COMPACTION_SETTINGS.keepRecentTokens,
 };
 
 export const COMPACT_AFTER_TOKENS_MODE_VALUES: readonly CompactAfterTokensMode[] = ["calibrated", "ratio"] as const;
@@ -369,11 +372,15 @@ function normalizeSettingsConfig(value: Record<string, unknown>): Partial<Config
 	return normalized;
 }
 
-function readPiCompactionEnabled(path: string): boolean | undefined {
+function readPiCompactionSettings(path: string): { enabled?: boolean; keepRecentTokens?: number } | undefined {
 	try {
 		const raw = JSON.parse(readFileSync(path, "utf-8")) as Record<string, unknown>;
 		const compaction = raw.compaction;
-		return isRecord(compaction) && typeof compaction.enabled === "boolean" ? compaction.enabled : undefined;
+		if (!isRecord(compaction)) return undefined;
+		return {
+			enabled: typeof compaction.enabled === "boolean" ? compaction.enabled : undefined,
+			keepRecentTokens: positiveIntegerOrUndefined(compaction.keepRecentTokens),
+		};
 	} catch (error) {
 		// A missing optional scope is absence; malformed JSON and IO failures are not.
 		if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
@@ -413,17 +420,23 @@ export function loadConfig(cwd?: string): Config {
 		merged.observationsPoolMaxTokens,
 	) ?? derivedObservationPoolTarget(merged.observationsPoolMaxTokens);
 
-	// Project scope wins over global, matching how Pi itself resolves `compaction.enabled`.
+	// Project scope wins over global, matching how Pi itself resolves `compaction.*`.
 	// Without a cwd only the global file is consulted.
 	const globalPath = join(getAgentDir(), "settings.json");
 	const projectPath = cwd === undefined ? undefined : join(cwd, ".pi", "settings.json");
-	const piAutoCompactionEnabled = (projectPath !== undefined ? readPiCompactionEnabled(projectPath) : undefined)
-		?? readPiCompactionEnabled(globalPath)
+	const projectCompaction = projectPath !== undefined ? readPiCompactionSettings(projectPath) : undefined;
+	const globalCompaction = readPiCompactionSettings(globalPath);
+	const piAutoCompactionEnabled = projectCompaction?.enabled
+		?? globalCompaction?.enabled
 		?? DEFAULTS.piAutoCompactionEnabled;
+	const piKeepRecentTokens = projectCompaction?.keepRecentTokens
+		?? globalCompaction?.keepRecentTokens
+		?? DEFAULTS.piKeepRecentTokens;
 
 	return {
 		...merged,
 		observationsPoolTargetTokens: target,
 		piAutoCompactionEnabled,
+		piKeepRecentTokens,
 	};
 }
