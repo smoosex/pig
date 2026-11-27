@@ -89,7 +89,7 @@ async function load(dir: string, files: PersonaDocument[]) {
   return { persistent, engine, active: soul.systemPrompt !== '' }
 }
 
-/** Atomic file reads never acquire a lock or persist decay/migration. SOUL evolution remains an unlocked agent edit. */
+/** Atomic file reads never acquire a lock or persist decay/migration. */
 export async function readPersona<T>(action: (view: PersonaView) => T): Promise<T> {
   const dir = personaDir()
   const files = await readDocuments(dir)

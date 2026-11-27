@@ -1166,6 +1166,7 @@ export const en: Messages = {
     hostsTitle: 'The sandbox refused {hosts}. Allow it?', hostsMessage: 'The command has finished. Allowing it does not rerun it; the agent runs it again if needed.', hostsSession: 'Allow for this session', hostsProject: 'Allow for this project', hostsDeny: 'Do not allow',
     mcpTitle: 'Call MCP tool {server} / {tool}?', mcpMessage: 'Arguments:\n{arguments}\n\n"Allow for this session" allows every tool of {server} until the session ends.',
     settingsTitle: 'Allow this application settings update?', settingsMessage: 'Group: {group}\nPatch:\n{patch}\n\nThis changes global settings, not just this conversation.',
+    personaTitle: 'Allow this persona document update?', personaMessage: 'Document: {file} ({action})\nChange:\n{patch}\n\nThis updates your global Soul / About You document across all conversations.',
     terminalTitle: 'Allow terminal input?', terminalMessage: 'This terminal is not sandboxed; input may run commands. "Allow this terminal (this session)" permits further input to this terminal from the current session until it closes.\n\nTerminal: {terminal}\nAction: {detail}\nInput: {input}',
     terminalAllowSession: 'Allow this terminal (this session)', terminalType: 'Type text', terminalTypeSubmit: 'Type and submit', terminalKey: 'Press key',
     browserUploadTitle: 'Allow this page to access local files?', browserUploadSensitive: 'potentially sensitive protected path',

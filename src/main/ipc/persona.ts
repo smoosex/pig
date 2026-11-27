@@ -6,7 +6,7 @@ import { refreshConversationFeatures } from '../pi/session-registry'
 import {
   getPersona, savePersonaFile, setPersonaAutomatic, setPersonaMood, setPersonaObserver
 } from '../features/persona/service'
-import { onPersonaControlsChanged } from '../features/persona/controls'
+import { onPersonaAgentFileSaved, onPersonaControlsChanged } from '../features/persona/controls'
 import { clearObserverUsage, summarizeObserverUsage } from '../features/persona/usage'
 import type { PersonaDocument, PersonaMoodValues, PersonaObserverSettings, PersonaObserverUsageRange } from '../../shared/persona'
 
@@ -15,11 +15,14 @@ function assertUi(event: IpcMainInvokeEvent): void {
 }
 
 export function registerPersonaIpc(): void {
-  // Conversations change mood through the settings tools too; open settings pages must re-read.
+  // Conversations change mood and persona documents through built-in tools too; open settings pages and idle sessions stay synced.
   onPersonaControlsChanged(() => {
     for (const win of BrowserWindow.getAllWindows()) {
       if (!win.isDestroyed()) win.webContents.send('persona:changed')
     }
+  })
+  onPersonaAgentFileSaved(() => {
+    void refreshConversationFeatures()
   })
   ipcMain.handle('persona:get', (event) => {
     assertUi(event)

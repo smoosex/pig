@@ -6,6 +6,7 @@
 import { resolve } from 'node:path'
 import type { InlineExtension } from '@earendil-works/pi-coding-agent'
 import { isChatCwd } from '../chats'
+import type { PersonaPermissionOptions } from '../permissions/persona'
 import { pigPath } from '../pig-dir'
 import { loadConfig } from './memory/config'
 
@@ -19,11 +20,13 @@ export function isObservationalMemoryEnabledForCwd(
   return loadConfig(cwd).enableInProjects !== false
 }
 
-export function conversationFeatureFactories(context?: { cwd: string; isolatedWorkspace?: boolean }): InlineExtension[] {
+export function conversationFeatureFactories(
+  context?: { cwd: string; isolatedWorkspace?: boolean; permissions?: PersonaPermissionOptions }
+): InlineExtension[] {
   return [
     { name: 'pig-persona', factory: async pi => {
       const { default: persona } = await import('./persona')
-      persona(pi)
+      persona(pi, context?.permissions)
     } },
     { name: 'observational-memory', factory: async pi => {
       if (context && !isObservationalMemoryEnabledForCwd(context.cwd, { isolatedWorkspace: context.isolatedWorkspace })) {

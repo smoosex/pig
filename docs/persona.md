@@ -10,11 +10,13 @@
 - `src/shared/persona.ts` 是 IPC 唯一契约，只接受所属 UI 主 frame；记忆设置另走 `memory:*` IPC 和 `conversation-features:changed`。
 - 人格页签右侧提供「灵魂」「关于你」按钮，点击才显示 Dialog 编辑器。保存成功关闭、失败保留草稿，未保存关闭需确认，保存期间禁止关闭。文件保存按固定文件名、SHA-256 revision 逐个原子替换，冲突不覆盖。
 
-## 系统前缀与表达提醒
+## 系统前缀、专用工具与表达提醒
 
-- 人格模块自身不注册模型工具、slash 或 TUI，通用设置工具的心情修改仍走 [应用设置](settings.md)。
-- `preamble.ts` 统一身份前缀；preamble 是唯一不包 XML 标签的系统章节。SOUL 非空且激活时注入稳定人格、语言规则、行为边界、日期、SOUL 路径与正文、演化规则和 USER 上下文；不编造感知或工具结果，被认真询问身份时不否认实际身份。
-- SOUL 为空或未激活时，由 `src/main/pi/pig-identity.ts` 提供默认身份、日期及存在时的 USER；不设置名字，主人取系统用户名，平台按系统确定。仅在 preamble 未写入时生效，与扩展顺序无关。
+- 人格模块在带身份的人类会话（项目工作区与 Bot 主会话；子 agent 与 Bot 后台托管会话排除）注册 deferred 专用工具 `persona_soul`（维护 `SOUL.md`）与 `persona_user`（维护 `USER.md`），归入 `persona` namespace 并列入 `pig_servers`；不注册 slash 或 TUI，心情三维与自动变化开关仍走 [应用设置](settings.md)。
+- 两个工具内闭环 `read`（返回原文与 `revision`）、`create`（应对首次安装缺失或空白文件初始化，拒绝覆盖非空内容）、`edit`（校验 `expectedRevision` 与唯一匹配局部替换，用于 `## Evolved Traits` 演化或局部修订）与 `replace`（带 `expectedRevision` 全量重写／清空），统一复用人格磁盘锁、YAML／256 KiB 校验、0600 原子写入、`persona:changed` 广播与空闲会话刷新；不再向提示词暴露裸文件路径或无锁直写。
+- 写操作在执行时按三态权限门控：`full-access` 直接执行，`default` 每次弹出单次审批展示校验后变更预览（预检校验通过后才询问，提交前在锁内复查模式与 `revision`），`read-only` 仅放行 `action: "read"`、拒绝一切写入；受限模式下同名扩展抢占直接拦截。核心 `SOUL` 段落仅在用户明确要求时创建或重写，自主演化只改末尾 `## Evolved Traits`。
+- `preamble.ts` 统一身份前缀；preamble 是唯一不包 XML 标签的系统章节。SOUL 非空且激活时注入稳定人格、语言规则、行为边界、日期、SOUL 正文、基于 `persona_soul`／`persona_user` 的演化与维护规则及 USER 上下文；不编造感知或工具结果，被认真询问身份时不否认实际身份。
+- SOUL 为空或未激活时，由 `src/main/pi/pig-identity.ts` 提供默认身份、日期、首次配置 `persona_soul`／`persona_user` 的简短指引及存在时的 USER；不设置名字，主人取系统用户名，平台按系统确定。仅在 preamble 未写入时生效，与扩展顺序无关。
 - 设置了 `customPrompt` 时，两条身份注入路径都不写。日期每轮按本机时区生成，跨天只产生一次章节补丁。
 - 固定人格和 USER 通过 `systemPromptOptions.sections.preamble` 注入，不能返回 `systemPrompt` 强制改写前缀；相关 SDK 补丁见 [SDK 维护](sdk-maintenance.md)。该强制提示不写入会话导出。
 - 在任务开始时读取一次心情，按设置契约从下一任务采纳更改。每次主 agent 模型调用前，`context_with_system` 确认最终系统提示及投影中的人格前缀仍保留 SOUL，再把心情融入一条英文表达提醒，作为隐藏 `persona-mood` 消息插入请求副本。SDK 转为 user 角色；不在系统前缀解释注入机制。保留系统章节补丁和工具声明，旧 `persona-mood` 仅从请求副本过滤，不改 JSONL。
@@ -29,7 +31,6 @@
 - 精力工作四小时减 0.5、空闲两小时恢复 0.5；重叠任务只计一次，不自动睡眠。活动租约结束／reload 释放，长任务定期续租，过期与旧宿主 PID 不计工作。
 - 关闭自动变化冻结情绪和精力，手动设置仍生效。`mood-state.json` v3 严格校验 v2 后映射，仅读不迁移，下一次显式变更原子保存。
 - JSON／YAML／IO 错误抛出，不能重置默认或降级；只允许 YAML frontmatter，禁止 gray-matter 可执行引擎。
-- Agent 自行编辑 SOUL 末尾 `## Evolved Traits` 是唯一不加锁、非原子写入，不能改核心段落；并发读取可能让一轮拿到不完整内容。
 - 运行模块进入 main bundle，不复制源码到 extraResources；记忆上游 LICENSE 仍随包附带。
 
 ## 情绪观察员

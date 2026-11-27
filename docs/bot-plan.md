@@ -136,7 +136,7 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
    - `bot_list_projects`：列出当前窗口已注册的项目（`cwd`、`name`、`isGit`、当前分支、工作树是否脏、活跃任务数），让 Bot 在不盲猜路径的前提下决策。
    - `bot_open_project`：注册一个本地已有目录到 Pig 项目列表（遵循当前权限模式：`full-access` 直接放行、`default` 复用 `session_open_project` 审批链路、`read-only` 拒绝；不隐式建目录或 clone）。
    - `bot_request_move_project`：针对已打开或 `~/pig_projects/*` 下的空闲项目非阻塞唤起前端 `MoveProjectDialog`（预填建议文件夹名与父目录），由用户在 UI 确认路径后执行本地目录物理搬迁与全链路关联数据迁移（会话、Git worktree、空间、看板、书签、长期记忆与 Bot 任务）。
-   - `bot_start_task`：**异步秒返（`<50ms` Fast Ack）**——支持传入已有 `projectCwd` 或 `newProject: { folderName, displayName?, fromWorkspaceSubpath? }`（二选一），以及写任务可选 `inPlace?: boolean`（默认 `false`）：仅做轻量参数/空目录预留校验、分配 `taskId`/`runId` 并原子落盘 `BotTask` + `BotRun` 为 `starting`，立即返回 `{ taskId, runId, projectCwd, mode, status: 'starting' }`，使主会话可在同一轮同时发出 `bot_start_task` 与 `send_message`；**绝不在工具调用内同步等待 `git init`、`git worktree add`、`createSessionRuntime` 或后台首轮启动**。已有 Git 项目写任务默认走独立 worktree；当用户明确要求直接修改 `main` / 主工作目录时传 `inPlace: true` 原位执行并记录实际检出分支（同一项目目录原位写任务互斥）。通过 `newProject` 新建的托管目录落位 `~/pig_projects/<folderName>`，默认不自动加入左侧项目栏（在 `BotTaskCard` 上展示「添加项目并查看」按需入列，`full-access` 直接放行、`default` 弹确认、`read-only` 拒绝），且首次任务及其后续 `bot_followup_task` 直接在主目录 `main` 分支原位写入，避免对空仓库多切一层冗余 worktree 导致主目录留空。往已打开的 Git 项目默认 worktree 派活在 `full-access` / `default` 下免弹派活审批卡；`inPlace: true` 在 `default` 下弹确认、`full-access` 下免弹。
+   - `bot_start_task`：**异步秒返（`<50ms` Fast Ack）**——支持传入已有 `projectCwd` 或 `newProject: { folderName }`（二选一），以及写任务可选 `inPlace?: boolean`（默认 `false`）：仅做轻量参数/空目录预留校验、分配 `taskId`/`runId` 并原子落盘 `BotTask` + `BotRun` 为 `starting`，立即返回 `{ taskId, runId, projectCwd, mode, status: 'starting' }`，使主会话可在同一轮同时发出 `bot_start_task` 与 `send_message`；**绝不在工具调用内同步等待 `git init`、`git worktree add`、`createSessionRuntime` 或后台首轮启动**。已有 Git 项目写任务默认走独立 worktree；当用户明确要求直接修改 `main` / 主工作目录时传 `inPlace: true` 原位执行并记录实际检出分支（同一项目目录原位写任务互斥）。通过 `newProject` 新建的托管目录落位 `~/pig_projects/<folderName>`，默认不自动加入左侧项目栏（在 `BotTaskCard` 上展示「添加项目并查看」按需入列，`full-access` 直接放行、`default` 弹确认、`read-only` 拒绝），且首次任务及其后续 `bot_followup_task` 直接在主目录 `main` 分支原位写入，避免对空仓库多切一层冗余 worktree 导致主目录留空。往已打开的 Git 项目默认 worktree 派活在 `full-access` / `default` 下免弹派活审批卡；`inPlace: true` 在 `default` 下弹确认、`full-access` 下免弹。
    - `bot_list_tasks` / `bot_get_task`：从宿主账本读取真实状态、worktree 路径、分支、阻塞审批状态与 `latestReceipt`，不靠模型翻聊天记录猜。
    - `bot_inspect_task`：只读查看 Bot 自己名下指定 `taskId` 的最近进展、工具轨迹或受控截断的 diff 摘要；只读取当前仍受托管的活跃 Run 的实时记录；已完成或已接管的 Run 只使用账本中的既有回执，不读取后续会话消息。
    - `bot_stop_task`：按精确 `taskId` 停止对应 Run；若由本次工具调用发起并完成停止，返回 `runId` 和 `receipt`，当前轮通过 `send_message` 报告，不另发模型唤醒或系统交付卡。加入已在途的停止或调用时任务已终结，不重发旧回执。
@@ -151,9 +151,9 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
 | 工具 / 插件 / 特性 | 策略 | 说明与约束 |
 | --- | --- | --- |
 | **`send_message` + `bot_*`（8 个）** | **专属启用** | 唯一对外表达口与任务编排入口。 |
-| **`read`（开放单文件读取）+ `edit` / `write`（硬路径白名单）** | **受限保留** | `read` 保留用于读取 `SKILL.md`、`SOUL.md`、用户提供的本地文件/日志，以及秒答单个项目文件的事实确认；**`edit` 与 `write` 在 `tool_call` 钩子中通过 `realTarget` 硬性锁死在 `$PIG_DIR/bot/workspace/**` 与 `$PIG_DIR/persona/SOUL.md`**，直写任何项目目录一律拦截，物理杜绝绕过 worktree 偷改项目代码。 |
-| **`bash`、`powershell`、`grep`、`find`、`ls`** | **主会话禁用** | 主会话通过 `applySessionTools` 隐藏并在 `tool_call` 双重拦截命令执行与仓库级检索工具；任何命令执行、构建/测试、跨文件代码排查均必须经 `bot_start_task` 委派至后台 Session。 |
-| **`pig-persona`、`memory_*`、`recall`（OM）** | **保留** | 常驻伙伴的人格、心情、全局长期记忆与观测记忆由 Bot 主会话持有。 |
+| **`read`（开放单文件读取）** | **受限保留** | `read` 保留用于读取 `SKILL.md`、用户提供的本地文件/日志，以及秒答单个项目文件的事实确认。 |
+| **`edit`、`write`、`bash`、`powershell`、`grep`、`find`、`ls`** | **主会话禁用** | 主会话通过 `applySessionTools` 隐藏并在 `tool_call` 双重拦截文件写入、命令执行与仓库级检索工具；人格文档由专用工具 `persona_soul` / `persona_user` 维护，长期笔记走 `memory_*`，任何项目文件创建/修改、命令执行、构建/测试与跨文件排查均经 `bot_start_task` 在项目/worktree 会话执行。 |
+| **`pig-persona`（含 `persona_soul` / `persona_user`）、`memory_*`、`recall`（OM）** | **保留** | 常驻伙伴的灵魂与关于你文档、心情、全局长期记忆与观测记忆由 Bot 主会话持有。 |
 | **`pig-web`（`web_search`/`fetch`/`read`）** | **保留** | 日常检索资料与网页阅读无需起项目 Session。 |
 | **`pig-settings`（延迟加载）** | **保留** | 支持用户自然语言调整主题、通知、默认模型等允许项。 |
 | **`tool_search`、`codemode`** | **保留（受禁用列表过滤）** | 复用 `sessionToolFactory` 过滤，无法越权调用已禁用工具。 |
@@ -185,11 +185,11 @@ Bot 主会话复用 `createSessionRuntime`（不另造 Agent 循环），运行�
 
 1. **交互层：落流即收，彻底取消排队条**
    - Bot 页采用即时聊天心智：用户每次发送，消息立即作为正式气泡落入对话流底部并清空输入框，随时可继续连发，**不出现**普通会话的 `QueuedMessageRow` 排队吊条与「按 Tab 插话」提示（UI 细节见 [Bot 页面与交互设计](bot-ui-design.md)）。
-2. **派活层：`<50ms` 异步秒返 + 主会话禁用 `bash` 防卡顿**
+2. **派活层：`<50ms` 异步秒返 + 主会话禁用文件写入与 `bash` 防卡顿**
    - `bot_start_task` 在落盘 `starting` 后立即返回，将 `git worktree add` 与 `createSessionRuntime` 移出 Bot 工具同步等待路径；
-   - Bot 主会话禁用 `bash` / `powershell` 等命令工具并将 `edit` / `write` 锁死在自留地，确保主会话轮次始终保持在轻快区间。
+   - Bot 主会话禁用 `edit` / `write` / `bash` / `powershell` 等写入与命令工具，杜绝在草稿目录偷写原型代码并确保主会话轮次始终保持在轻快区间。
 3. **调度层：未落地思考「抢占合并」+ 副作用后「强制 `steer`」**
-   - Bot 主会话运行控制器为当前活跃轮维护 `hasSideEffect` 标志（一旦调用过 `send_message` 或任何有副作用工具如 `bot_start_task` / `bot_stop_task` / `bot_followup_task` / `bot_cleanup_worktree` / 允许范围内的 `edit` / `write` 即置为 `true`）。
+   - Bot 主会话运行控制器为当前活跃轮维护 `hasSideEffect` 标志（一旦调用过 `send_message` 或任何有副作用工具如 `bot_start_task` / `bot_stop_task` / `bot_followup_task` / `bot_cleanup_worktree` / `persona_soul` / `persona_user` 写操作 / `memory_*` 写操作 / `settings_update` / `kanban_*` 写操作即置为 `true`）。
    - **情况 A（`hasSideEffect === false`：纯思考或仅只读查看，尚未发出气泡也无副作用）**：用户此时补发新消息，宿主立刻 abort 当前未落地的思考流（零副作用、几十毫秒切断），把连续发来的用户消息合并在上下文中立即重起一轮。用户体感如同真人聊天连发两句后对方一并看完一起回复，完全零排队、零割裂。
    - **情况 B（`hasSideEffect === true`：已派活、已调 `send_message` 或已执行有副作用工具）**：不可 abort（避免半截副作用），宿主自动以 `streamingBehavior: 'steer'` 注入新消息（不用 `followUp` 干等整轮彻底结束）；配合 `<50ms` 异步派活，当前工具落地后下一拍即刻处理用户新消息。
 4. **明确不采用「双模型快慢嘴」**

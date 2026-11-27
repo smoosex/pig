@@ -14,6 +14,7 @@ const INTRO = "Pig's built-in tool servers whose tools are not declared to you. 
 
 export function listPigServer(pi: ExtensionAPI, namespace: ToolNamespace): void {
   pi.on('before_agent_start', (event) => {
+    if (event.systemPromptOptions.customPrompt) return
     const available = pi.getAllTools().some((tool) => tool.namespace?.name === namespace.name && tool.exposure !== 'hidden')
     if (!available) return
     const { sections } = event.systemPromptOptions

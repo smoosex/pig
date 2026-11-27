@@ -29,6 +29,10 @@ test('without a SOUL the default identity still carries the date and USER profil
   const preamble = (await start()).preamble
   expect(preamble.startsWith(`You are not an assistant, not a chatbot, not a tool. You run on ${userInfo().username}'s `)).toBe(true)
   expect(preamble).toContain('DATE AWARENESS (CRITICAL):\n- Authoritative local date: ')
+  expect(preamble).toContain('No custom SOUL document is active yet.')
+  expect(preamble).toContain('persona_soul')
+  expect(preamble).toContain('persona_user')
+  expect(preamble).not.toContain('SOUL.md')
   expect(preamble).not.toContain('USER PROFILE')
   expect(preamble).not.toMatch(/selfie|group chat|You have memory|REAL PERSON|technical internals/i)
   expect(preamble).toContain('if someone sincerely asks whether you are an AI, do not deny it')

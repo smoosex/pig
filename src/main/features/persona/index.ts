@@ -1,16 +1,17 @@
 /* Persona identity and bounded expressive state. Observation is background-only and never continues the main agent. */
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
 import type { ExtensionAPI, ExtensionContext } from '@earendil-works/pi-coding-agent'
 import { personaTransaction, readPersona, setActivity, type PersonaView } from './kernel'
 import { soulPreamble } from './preamble'
-import { personaDir } from './storage'
 import { completedMoodRounds } from './conversation'
 import { MoodObserver } from './observer'
 import { onPersonaControlsChanged } from './controls'
 import { appendObserverUsage } from './usage'
+import { registerPersonaTools } from './tools'
+import type { PersonaPermissionOptions } from '../../permissions/persona'
 
-export default function personaExtension(pi: ExtensionAPI): void {
+export default function personaExtension(pi: ExtensionAPI, permissionOptions?: PersonaPermissionOptions): void {
+  registerPersonaTools(pi, permissionOptions)
   const activityId = `pid/${process.pid}/${randomUUID()}`
   let working = false
   let activityTimer: ReturnType<typeof setInterval> | undefined
@@ -150,7 +151,7 @@ export default function personaExtension(pi: ExtensionAPI): void {
       if (!engine.persistent.emotionUpdatesEnabled || !engine.persistent.observer.enabled) cancelObserver(true)
       if (!options.customPrompt) {
         const now = new Date()
-        const preamble = soulPreamble(engine.soul, join(personaDir(), 'SOUL.md'), now)
+        const preamble = soulPreamble(engine.soul, now)
         options.sections.preamble = preamble
         style = { preamble, mood: engine.getEmotionDesc(), timestamp: now.getTime() }
       }
