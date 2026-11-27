@@ -49,7 +49,7 @@ function OperationDiff({ path, operation, index, count, style }: { path: string;
         <FileDiff fileDiff={fileDiff} options={options} />
       ) : operation.patch ?? operation.diff ? (
         // A patch the parser rejects and the old numbered display diff are still the recorded change.
-        <pre className="overflow-x-auto px-3 py-2 font-mono text-xs whitespace-pre text-code-foreground">{operation.patch ?? operation.diff}</pre>
+        <pre className="px-3 py-2 font-mono text-xs wrap-break-word whitespace-pre-wrap text-code-foreground">{operation.patch ?? operation.diff}</pre>
       ) : (
         <p className="px-3 py-2 text-xs text-muted-foreground">
           {t(operation.tool === 'write' ? 'turnChanges.writeUnavailable' : 'turnChanges.unavailable')}

@@ -2,9 +2,9 @@ import type { FileDiffOptions, FileOptions } from '@pierre/diffs/react'
 import type { DiffStyle } from '../../stores/diff'
 
 /**
- * Every diff surface in Pig renders through @pierre/diffs with the same options: the app draws its own
- * file headers, the shared highlighter is asked for the WASM engine, and the library's inner
- * horizontal scrollbars are hidden because the page hides its own.
+ * Every diff and file surface in Pig renders through @pierre/diffs with the same options: the app draws
+ * its own file headers, long lines soft-wrap, the shared highlighter is asked for the WASM engine, and
+ * the library's inner horizontal scrollbars are hidden because the page hides its own.
  */
 
 /**
@@ -33,6 +33,7 @@ export function fileDiffOptions(dark: boolean, style: DiffStyle): FileDiffOption
   return {
     theme: { light: 'github-light', dark: 'github-dark' },
     themeType: dark ? 'dark' : 'light',
+    overflow: 'wrap',
     preferredHighlighter: 'shiki-wasm',
     diffStyle: style,
     diffIndicators: 'bars',
@@ -50,6 +51,7 @@ export function fileCodeOptions(dark: boolean): FileOptions<undefined, undefined
   return {
     theme: { light: 'github-light', dark: 'github-dark' },
     themeType: dark ? 'dark' : 'light',
+    overflow: 'wrap',
     preferredHighlighter: 'shiki-wasm',
     disableFileHeader: true,
     unsafeCSS: codeSurfaceCSS

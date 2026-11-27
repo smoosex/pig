@@ -561,6 +561,7 @@ else {
     for (const dark of [false, true]) {
       for (const options of [fileCodeOptions(dark), fileDiffOptions(dark, 'split'), fileDiffOptions(dark, 'unified')]) {
         assert.equal(options.themeType, dark ? 'dark' : 'light')
+        assert.equal(options.overflow, 'wrap')
         assert.ok(options.unsafeCSS)
         const rules = parse(options.unsafeCSS)
         const host = rules.nodes.find((node) => node.type === 'rule' && node.selector === ':host')
