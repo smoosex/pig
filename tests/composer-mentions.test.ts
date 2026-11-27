@@ -301,13 +301,13 @@ describe('file drag into the composer', () => {
         { dataTransfer: { types: ['Files'], files: [imgFile], items: [] } as unknown as DataTransfer },
         { editable: true, cwd: '/repo', bashMode: true }
       )
-    ).toBeNull()
+    ).toBe('files')
     expect(
       classifyComposerDrag(
         { dataTransfer: { types: ['Files'], files: [pdfFile], items: [] } as unknown as DataTransfer },
         { editable: true, cwd: '/repo', bashMode: false }
       )
-    ).toBeNull()
+    ).toBe('files')
     expect(
       classifyComposerDrag(
         { dataTransfer: { types: ['text/plain'], files: [], items: [] } as unknown as DataTransfer },
@@ -397,6 +397,52 @@ describe('file drag into the composer', () => {
       '已有前缀 @AGENTS.md ',
       'drops append after existing content instead of jumping to posAtCoords(1)'
     )
+
+    // 2c. External OS filesystem drops convert workspace-internal files to relative chips, external files
+    // to absolute chips, directories to `@dir/` text, and bash-mode drops to shell-escaped paths.
+    const fakePaths = new Map<File, string>()
+    const insideOsFile = new File(['export {}'], 'inside.ts', { type: 'text/typescript' })
+    const outsideOsFile = new File(['%PDF'], 'spec.pdf', { type: 'application/pdf' })
+    const outsideOsDir = new File([''], 'my docs', { type: '' })
+    fakePaths.set(insideOsFile, '/repo/src/inside.ts')
+    fakePaths.set(outsideOsFile, '/outside/spec.pdf')
+    fakePaths.set(outsideOsDir, '/outside/my docs')
+    const prevWinApi = (window as unknown as { api?: Record<string, unknown> }).api
+    Object.assign(window, {
+      api: {
+        ...(prevWinApi ?? {}),
+        getPathForFile: (file: File) => fakePaths.get(file) ?? '',
+        localFileMentionInfo: async (path: string) =>
+          path === '/outside/my docs'
+            ? { kind: 'directory' as const, absolutePath: path, modifiedAt: 1 }
+            : { kind: 'file' as const, absolutePath: path, modifiedAt: 1, lineCount: 10 }
+      }
+    })
+    await act(async () => {
+      editorState.clear()
+    })
+    const osDropEvent = new Event('drop', { bubbles: true, cancelable: true })
+    Object.assign(osDropEvent, {
+      dataTransfer: {
+        types: ['Files'],
+        files: [insideOsFile, outsideOsFile, outsideOsDir],
+        items: [],
+        getData: () => ''
+      },
+      clientX: 0,
+      clientY: 0
+    })
+    await act(async () => {
+      editorState.editor!.view.dom.dispatchEvent(osDropEvent)
+      await new Promise((resolve) => setTimeout(resolve, 0))
+    })
+    assert.equal(osDropEvent.defaultPrevented, true)
+    assert.equal(editorState.getDraft().text, '@src/inside.ts @/outside/spec.pdf @"/outside/my docs/" ')
+    assert.deepEqual(
+      editorState.getDraft().mentions.map((m) => m.path),
+      ['src/inside.ts', '/outside/spec.pdf']
+    )
+    Object.assign(window, { api: prevWinApi })
 
     // 3. ComposerDropHint renders localized banner text and hoverTabReference notifies target enter/leave
     await act(async () => {

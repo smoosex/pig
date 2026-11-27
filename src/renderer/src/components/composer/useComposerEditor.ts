@@ -20,8 +20,9 @@ import { EMPTY_COMPOSER, serializeComposerDocument, textToComposerDocument } fro
 import { clipboardImages } from './useComposerImages'
 import {
   activeFileDrag,
-  draggedImageFiles,
-  hasDraggedImageFiles,
+  draggedFiles,
+  droppedFilePath,
+  isDraggedImageFile,
   type FileDrag
 } from './file-drag'
 import { useComposerDraftsStore } from '../../stores/composer-drafts'
@@ -32,8 +33,11 @@ interface ComposerEditorOptions {
   isActive?: boolean
   receivePromotionFocus?: boolean
   disabled?: boolean
-  /** The worktree `@` paths are relative to; a dragged row from any other one is refused. */
+  /** The worktree `@` paths are relative to; a dragged row from any other one is refused unless `acceptAnyWorkspaceFileDrag` is set. */
   cwd?: string | null
+  acceptAnyWorkspaceFileDrag?: boolean
+  placeholderText?: string
+  ariaLabel?: string
   isBashMode?: () => boolean
   onKeyDown: (event: KeyboardEvent) => boolean
   onPasteImages: (files: File[]) => Promise<void>
@@ -86,18 +90,47 @@ function shellWord(text: string): string {
   return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`
 }
 
+function normalizeDroppedPath(rawPath: string): string {
+  const normalized = rawPath.replace(/\\/g, '/')
+  if (normalized === '/' || /^[a-zA-Z]:\/$/.test(normalized)) return normalized
+  return normalized.replace(/\/+$/, '')
+}
+
+/** Relativizes an OS-dropped path when strictly inside `cwd`, keeping the full `/`-normalized path otherwise. */
+export function resolveExternalDropPath(rawPath: string, cwd: string | null | undefined): string {
+  const target = normalizeDroppedPath(rawPath)
+  if (!cwd) return target
+  const root = normalizeDroppedPath(cwd)
+  if (!root || target.length <= root.length) return target
+  const windowsDrive = /^[a-zA-Z]:\//.test(root) && /^[a-zA-Z]:\//.test(target)
+  const prefix = root.endsWith('/') ? root : `${root}/`
+  const matches = windowsDrive
+    ? target.slice(0, prefix.length).toLowerCase() === prefix.toLowerCase()
+    : target.startsWith(prefix)
+  return matches ? target.slice(prefix.length) : target
+}
+
 /**
  * A file becomes the same chip `@` completion leaves; a directory stays `@dir/` text, as completion
  * leaves it too. In bash mode the shell gets the bare path, since `@` means nothing to it.
  */
-function insertFileDrag(view: EditorView, drag: FileDrag, bashMode: boolean, at: number): void {
+function insertFileDrags(
+  view: EditorView,
+  drags: ReadonlyArray<Pick<FileDrag, 'path' | 'isDirectory'>>,
+  bashMode: boolean,
+  at: number
+): void {
+  if (drags.length === 0) return
   const { schema, doc } = view.state
   const before = doc.textBetween(Math.max(0, at - 1), at, '\n', '\ufffc')
   const nodes: ProseMirrorNode[] = []
   if (before && !/\s/.test(before)) nodes.push(schema.text(' '))
-  if (bashMode) nodes.push(schema.text(`${shellWord(drag.path)} `))
-  else if (drag.isDirectory) nodes.push(schema.text(`${fileMentionText(`${drag.path}/`)} `))
-  else nodes.push(schema.nodes.fileMention.create({ path: drag.path }), schema.text(' '))
+  for (const drag of drags) {
+    const cleanDir = drag.path.replace(/\/+$/, '')
+    if (bashMode) nodes.push(schema.text(`${shellWord(drag.path)} `))
+    else if (drag.isDirectory) nodes.push(schema.text(`${fileMentionText(`${cleanDir}/`)} `))
+    else nodes.push(schema.nodes.fileMention.create({ path: drag.path }), schema.text(' '))
+  }
   insertSlice(view, Slice.maxOpen(Fragment.fromArray(nodes)), at)
 }
 
@@ -137,11 +170,108 @@ export function useComposerEditor(options: ComposerEditorOptions) {
   const focusShortcut = useShortcut('composer.focus')
   // Read at each decoration pass: the editor is built once, the key and the language can change.
   const placeholder = useRef('')
-  placeholder.current = focusShortcut ? t('composer.focusPlaceholder', { key: shortcutText(focusShortcut) }) : ''
+  placeholder.current = options.placeholderText ?? (focusShortcut ? t('composer.focusPlaceholder', { key: shortcutText(focusShortcut) }) : '')
 
   const dropInsertionPos = (view: EditorView): number => {
     const endPos = Math.max(1, view.state.doc.content.size - 1)
     return view.hasFocus() || hasPlacedCaret.current ? view.state.selection.to : endPos
+  }
+
+  const handleExternalDrop = (view: EditorView, drag: Pick<DragEvent, 'dataTransfer' | 'preventDefault'>): boolean => {
+    const at = dropInsertionPos(view)
+    const bashMode = callbacks.current.isBashMode?.() ?? false
+    const targetCwd = callbacks.current.cwd
+    const targetSessionId = callbacks.current.sessionId
+    const workspaceFile = activeFileDrag(drag)
+    if (workspaceFile) {
+      drag.preventDefault()
+      let resolvedPath: string | null = null
+      if (workspaceFile.cwd === targetCwd) {
+        resolvedPath = workspaceFile.path
+      } else if (callbacks.current.acceptAnyWorkspaceFileDrag) {
+        resolvedPath = `${normalizeDroppedPath(workspaceFile.cwd)}/${workspaceFile.path}`
+      }
+      if (!resolvedPath) return true
+      insertFileDrags(view, [{ path: resolvedPath, isDirectory: workspaceFile.isDirectory }], bashMode, at)
+      hasPlacedCaret.current = true
+      view.focus()
+      return true
+    }
+
+    const files = draggedFiles(drag.dataTransfer)
+    if (files.length > 0) {
+      if (bashMode) {
+        drag.preventDefault()
+        const shellDrags = files
+          .map((file) => droppedFilePath(file))
+          .filter(Boolean)
+          .map((absPath) => ({ path: resolveExternalDropPath(absPath, targetCwd), isDirectory: false }))
+        if (shellDrags.length > 0) {
+          insertFileDrags(view, shellDrags, true, at)
+          hasPlacedCaret.current = true
+          view.focus()
+        }
+        return true
+      }
+
+      const images = files.filter(isDraggedImageFile)
+      const localPaths = files
+        .filter((file) => !isDraggedImageFile(file))
+        .map((file) => droppedFilePath(file))
+        .filter(Boolean)
+
+      drag.preventDefault()
+      if (images.length > 0) {
+        void callbacks.current.onPasteImages(images)
+      }
+      if (localPaths.length > 0) {
+        const inspectLocal = typeof window !== 'undefined' ? window.api?.localFileMentionInfo : undefined
+        if (typeof inspectLocal === 'function') {
+          void Promise.all(
+            localPaths.map(async (absPath) => {
+              const info = await inspectLocal(absPath).catch(() => null)
+              return {
+                path: resolveExternalDropPath(absPath, targetCwd),
+                isDirectory: info?.kind === 'directory'
+              }
+            })
+          ).then((drags) => {
+            if (
+              view.isDestroyed ||
+              !view.editable ||
+              callbacks.current.disabled ||
+              callbacks.current.sessionId !== targetSessionId
+            ) {
+              return
+            }
+            const safeAt = Math.min(Math.max(1, at), Math.max(1, view.state.doc.content.size - 1))
+            insertFileDrags(view, drags, false, safeAt)
+            hasPlacedCaret.current = true
+            view.focus()
+          })
+        } else {
+          insertFileDrags(
+            view,
+            localPaths.map((absPath) => ({ path: resolveExternalDropPath(absPath, targetCwd), isDirectory: false })),
+            false,
+            at
+          )
+          hasPlacedCaret.current = true
+          view.focus()
+        }
+      } else if (images.length > 0) {
+        view.focus()
+      }
+      return true
+    }
+
+    const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
+    if (!dropped) return false
+    drag.preventDefault()
+    insertPastedText(view, dropped, at)
+    hasPlacedCaret.current = true
+    view.focus()
+    return true
   }
 
   const editor = useEditor({
@@ -193,7 +323,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     editorProps: {
       attributes: {
         'data-slot': 'input-group-control',
-        'aria-label': t('composer.messageLabel'),
+        'aria-label': options.ariaLabel ?? t('composer.messageLabel'),
         'aria-multiline': 'true',
         'aria-disabled': String(!options.sessionId || Boolean(options.disabled)),
         class: 'min-h-16 outline-none whitespace-pre-wrap break-words'
@@ -217,17 +347,15 @@ export function useComposerEditor(options: ComposerEditorOptions) {
           const file = activeFileDrag(drag)
           if (file) {
             event.preventDefault()
-            const accepted = view.editable && !callbacks.current.disabled && file.cwd === callbacks.current.cwd
+            const accepted =
+              view.editable &&
+              !callbacks.current.disabled &&
+              (Boolean(callbacks.current.acceptAnyWorkspaceFileDrag) || file.cwd === callbacks.current.cwd)
             drag.dataTransfer!.dropEffect = accepted ? 'copy' : 'none'
             return true
           }
           if (drag.dataTransfer?.types.includes('Files')) {
-            const accepted =
-              view.editable &&
-              !callbacks.current.disabled &&
-              !(callbacks.current.isBashMode?.() ?? false) &&
-              hasDraggedImageFiles(drag.dataTransfer)
-            if (!accepted) return false
+            if (!view.editable || callbacks.current.disabled) return false
             event.preventDefault()
             drag.dataTransfer.dropEffect = 'copy'
             return true
@@ -246,38 +374,14 @@ export function useComposerEditor(options: ComposerEditorOptions) {
             return true
           }
           if (view.dragging) return false
-          const drag = event as DragEvent
-          const at = dropInsertionPos(view)
-          const file = activeFileDrag(drag)
-          if (file) {
-            event.preventDefault()
-            if (file.cwd !== callbacks.current.cwd) return true
-            insertFileDrag(view, file, callbacks.current.isBashMode?.() ?? false, at)
-            hasPlacedCaret.current = true
-            view.focus()
-            return true
-          }
-          if (!(callbacks.current.isBashMode?.() ?? false)) {
-            const images = draggedImageFiles(drag.dataTransfer)
-            if (images.length > 0) {
-              event.preventDefault()
-              void callbacks.current.onPasteImages(images)
-              view.focus()
-              return true
-            }
-          }
-          const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
-          if (!dropped || (drag.dataTransfer?.files.length ?? 0) > 0) return false
-          event.preventDefault()
-          insertPastedText(view, dropped, at)
-          hasPlacedCaret.current = true
-          view.focus()
-          return true
+          return handleExternalDrop(view, event as DragEvent)
         }
       },
       handleKeyDown: (view, event) => {
         if (callbacks.current.disabled || !view.editable) return false
-        if (event.isComposing || composing.current || event.keyCode === 229) return false
+        if (event.isComposing || composing.current || event.keyCode === 229) {
+          return event.key === 'Enter'
+        }
         return callbacks.current.onKeyDown(event)
       },
       handlePaste: (view, event) => {
@@ -402,33 +506,7 @@ export function useComposerEditor(options: ComposerEditorOptions) {
     if (!editor || editor.isDestroyed || callbacks.current.disabled || !editor.view.editable || editor.view.dragging) {
       return false
     }
-    const { view } = editor
-    const at = dropInsertionPos(view)
-    const file = activeFileDrag(drag)
-    if (file) {
-      drag.preventDefault()
-      if (file.cwd !== callbacks.current.cwd) return true
-      insertFileDrag(view, file, callbacks.current.isBashMode?.() ?? false, at)
-      hasPlacedCaret.current = true
-      view.focus()
-      return true
-    }
-    if (!(callbacks.current.isBashMode?.() ?? false)) {
-      const images = draggedImageFiles(drag.dataTransfer)
-      if (images.length > 0) {
-        drag.preventDefault()
-        void callbacks.current.onPasteImages(images)
-        view.focus()
-        return true
-      }
-    }
-    const dropped = drag.dataTransfer?.getData('text/plain') ?? ''
-    if (!dropped || (drag.dataTransfer?.files.length ?? 0) > 0) return false
-    drag.preventDefault()
-    insertPastedText(view, dropped, at)
-    hasPlacedCaret.current = true
-    view.focus()
-    return true
+    return handleExternalDrop(editor.view, drag)
   }, [editor])
 
   const insertTabReference = useCallback((reference: TabMention): void => {

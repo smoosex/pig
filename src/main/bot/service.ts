@@ -10,6 +10,8 @@ import { basename, join } from 'node:path'
 import { BrowserWindow } from 'electron'
 import { SessionManager, type AgentSession } from '@earendil-works/pi-coding-agent'
 import { isThinkingLevel, type SessionControls, type ThinkingLevel } from '../../shared/api'
+import type { FileMention } from '../../shared/file-mentions'
+import { isInlinePastedTextAttachments, utf8ByteLength } from '../../shared/pasted-text'
 import type { PermissionMode } from '../../shared/permissions'
 import type { SessionAgentTask } from '../../shared/session-agent'
 import {
@@ -115,6 +117,7 @@ export class BotService {
     text: string
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
+    fileMentions?: FileMention[]
     projectMentions?: string[]
     issueMentions?: number[]
   } | null = null
@@ -465,8 +468,14 @@ export class BotService {
     }))
     let text = req.text
     if (req.textAttachments?.length) {
-      const extra = req.textAttachments.map((att) => `\n\n[Attached text]\n${att.text}`).join('')
-      text = `${text}${extra}`
+      const normalized = req.textAttachments.map((att) => ({
+        ...att,
+        byteSize: att.byteSize ?? utf8ByteLength(att.text)
+      }))
+      if (!isInlinePastedTextAttachments(text, normalized)) {
+        const extra = req.textAttachments.map((att) => `\n\n[Attached text]\n${att.text}`).join('')
+        text = `${text}${extra}`
+      }
     }
     await awaitCompactionBeforePrompt(session.sessionId, session)
     await session.prompt(text, {
@@ -1017,6 +1026,7 @@ export class BotService {
     text: string
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
+    fileMentions?: FileMention[]
     projectMentions?: string[]
     issueMentions?: number[]
   }): Promise<BotTimelineItem> {

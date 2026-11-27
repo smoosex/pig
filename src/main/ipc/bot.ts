@@ -4,6 +4,7 @@
  */
 import { BrowserWindow, dialog, ipcMain, nativeTheme, type IpcMainInvokeEvent } from 'electron'
 import { isThinkingLevel } from '../../shared/api'
+import { isFileMentionShape, type FileMention } from '../../shared/file-mentions'
 import type { PermissionMode } from '../../shared/permissions'
 import { isBotAvatarId, type BotEvent, type BotImageAttachment, type BotPreferencesPatch, type BotSurface, type BotTextAttachment } from '../../shared/bot'
 import { assertBrowserSender } from '../browser/validation'
@@ -104,6 +105,7 @@ export function registerBotIpc(): void {
       text?: unknown
       images?: BotImageAttachment[]
       textAttachments?: BotTextAttachment[]
+      fileMentions?: FileMention[]
       projectMentions?: string[]
       issueMentions?: number[]
     }
@@ -112,6 +114,9 @@ export function registerBotIpc(): void {
       text: payload.text,
       images: Array.isArray(payload.images) ? payload.images : undefined,
       textAttachments: Array.isArray(payload.textAttachments) ? payload.textAttachments : undefined,
+      fileMentions: Array.isArray(payload.fileMentions)
+        ? payload.fileMentions.filter(isFileMentionShape).map(({ path, start, end }) => ({ path, start, end }))
+        : undefined,
       projectMentions: Array.isArray(payload.projectMentions)
         ? payload.projectMentions.filter((item): item is string => typeof item === 'string')
         : undefined,

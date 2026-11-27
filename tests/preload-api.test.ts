@@ -23,6 +23,9 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
         exposed = api
       }
     },
+    webUtils: {
+      getPathForFile: (file: File) => `/native/${file.name}`
+    },
     ipcRenderer: {
       invoke: (channel: string, ...args: unknown[]) => {
         invokes.push({ channel, args })
@@ -38,6 +41,7 @@ async function runFixture(supportsGlass: boolean): Promise<void> {
 
   const api = exposed as SessionApi
   assert.equal(api.supportsGlass, supportsGlass, 'native material capability is synchronous and needs no IPC call')
+  assert.equal(api.getPathForFile(new File([''], 'note.md')), '/native/note.md', 'webUtils.getPathForFile resolves local file paths synchronously')
   assert.equal(invokes.length, 0)
   await api.browseProjectDirectories('/home', true)
   await api.searchProjectDirectories('/home', 'web', false)

@@ -32,30 +32,52 @@ export function fileDragProps(drag: FileDrag) {
   }
 }
 
+const RASTER_IMAGE_EXT = /\.(?:a?png|jpe?g|jfif|gif|webp|avif|bmp)$/i
+
 export type ComposerDragKind = 'files' | 'tab' | 'text'
 
 export function activeFileDrag(event: Pick<DragEvent, 'dataTransfer'>): FileDrag | null {
   return active && event.dataTransfer?.types.includes(FILE_DRAG_TYPE) ? active : null
 }
 
-export function hasDraggedImageFiles(dataTransfer: DataTransfer | null | undefined): boolean {
-  if (!dataTransfer) return false
-  if (dataTransfer.files.length > 0) {
-    return [...dataTransfer.files].some((file) => file.type.startsWith('image/'))
-  }
-  return [...(dataTransfer.items ?? [])].some((item) => item.kind === 'file' && item.type.startsWith('image/'))
+/** Reads the native OS filesystem path of a dropped `File` via preload `webUtils`, or `''` when absent. */
+export function droppedFilePath(file: File): string {
+  const fromBridge = typeof window !== 'undefined' ? window.api?.getPathForFile?.(file) : undefined
+  if (typeof fromBridge === 'string' && fromBridge.length > 0) return fromBridge
+  const legacy = (file as File & { path?: unknown }).path
+  return typeof legacy === 'string' ? legacy : ''
 }
 
-export function draggedImageFiles(dataTransfer: DataTransfer | null | undefined): File[] {
+export function isDraggedImageFile(file: File): boolean {
+  if (file.type === 'image/svg+xml') return false
+  if (file.type.startsWith('image/')) return true
+  return !file.type && RASTER_IMAGE_EXT.test(file.name)
+}
+
+export function draggedFiles(dataTransfer: DataTransfer | null | undefined): File[] {
   if (!dataTransfer) return []
   if (dataTransfer.files.length > 0) {
-    return [...dataTransfer.files].filter((file) => file.type.startsWith('image/'))
+    return [...dataTransfer.files]
   }
   return [...(dataTransfer.items ?? [])].flatMap((item) => {
-    if (item.kind !== 'file' || !item.type.startsWith('image/')) return []
+    if (item.kind !== 'file') return []
     const file = item.getAsFile()
     return file ? [file] : []
   })
+}
+
+export function hasDraggedImageFiles(dataTransfer: DataTransfer | null | undefined): boolean {
+  if (!dataTransfer) return false
+  if (dataTransfer.files.length > 0) {
+    return [...dataTransfer.files].some(isDraggedImageFile)
+  }
+  return [...(dataTransfer.items ?? [])].some(
+    (item) => item.kind === 'file' && item.type !== 'image/svg+xml' && item.type.startsWith('image/')
+  )
+}
+
+export function draggedImageFiles(dataTransfer: DataTransfer | null | undefined): File[] {
+  return draggedFiles(dataTransfer).filter(isDraggedImageFile)
 }
 
 /**
@@ -69,6 +91,7 @@ export function classifyComposerDrag(
     editable: boolean
     disabled?: boolean
     cwd?: string | null
+    acceptAnyWorkspaceFileDrag?: boolean
     bashMode?: boolean
     internalDragging?: boolean
   }
@@ -79,11 +102,11 @@ export function classifyComposerDrag(
 
   const workspaceFile = activeFileDrag(event)
   if (workspaceFile) {
-    return workspaceFile.cwd === options.cwd ? 'files' : null
+    return options.acceptAnyWorkspaceFileDrag || workspaceFile.cwd === options.cwd ? 'files' : null
   }
 
   if (data.types.includes('Files')) {
-    return !options.bashMode && hasDraggedImageFiles(data) ? 'files' : null
+    return 'files'
   }
 
   if (data.types.includes('text/plain')) {

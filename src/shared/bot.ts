@@ -1,5 +1,6 @@
 /** Shared cross-process contracts for Pig's single-Bot orchestration, task ledger, notices, and UI timeline. */
 import type { SessionControls, ThinkingLevel } from './api'
+import type { FileMention } from './file-mentions'
 import type { PermissionMode } from './permissions'
 import type { PastedTextAttachmentInput } from './pasted-text'
 
@@ -198,6 +199,7 @@ export type BotTimelineItem =
       text: string
       images?: BotImageAttachment[]
       textAttachments?: BotTextAttachment[]
+      fileMentions?: FileMention[]
       projectMentions?: string[]
       issueMentions?: number[]
       createdAt: number
@@ -348,6 +350,7 @@ export interface BotApi {
     text: string
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
+    fileMentions?: FileMention[]
     projectMentions?: string[]
     issueMentions?: number[]
   }) => Promise<BotTimelineItem>

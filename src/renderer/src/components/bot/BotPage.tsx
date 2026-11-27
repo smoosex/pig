@@ -20,7 +20,14 @@ import {
 } from 'lucide-react'
 import { BotAvatar } from 'bot-avatars'
 import { toast } from 'sonner'
-import { composePromptText, formatPastedTextSize, utf8ByteLength } from '../../../../shared/pasted-text'
+import {
+  composePromptText,
+  createInlinePastedTextDisplayMetadata,
+  formatPastedTextSize,
+  isInlinePastedTextAttachments,
+  utf8ByteLength
+} from '../../../../shared/pasted-text'
+import { isFileMentionAt } from '../../../../shared/file-mentions'
 import { baseName } from '../../../../shared/paths'
 import {
   DEFAULT_BOT_AVATAR,
@@ -43,10 +50,11 @@ import { ApprovalPrompt, useApprovalPrompt } from '../composer/ApprovalPrompt'
 import { botColumn } from '../../chat/layout'
 import { SCROLL_END } from '../../chat/scroll-state'
 import { FileTypeIcon } from '../files/FileTypeIcon'
-import { FileMentionProvider } from '../FileMentionChip'
+import { FileMentionChip, FileMentionContext, FileMentionProvider } from '../FileMentionChip'
 import { ImagePreview } from '../ImagePreview'
 import { IssueMentionChip, renderTextWithIssueChips } from '../IssueMentionNode'
 import { MarkdownText } from '../MarkdownText'
+import { PastedTextChip } from '../PastedTextChip'
 import { PastedTextPreview } from '../PastedTextPreview'
 import { ShortcutKbd } from '../ShortcutKbd'
 import { userBubbleSurface } from '../turn/TurnMessages'
@@ -159,6 +167,7 @@ export function BotPage({
   onOpenKanban?: () => void
 }) {
   const t = useT()
+  const botOpen = useBotStore((s) => s.open)
   const state = useBotStore((s) => s.state)
   const timeline = useBotStore((s) => s.timeline)
   const tasks = useBotStore((s) => s.tasks)
@@ -472,7 +481,7 @@ export function BotPage({
               <p className="mt-1.5 max-w-md text-sm text-muted-foreground">{t('bot.empty.subtitle')}</p>
 
               <div className="mt-6 w-full">
-                <BotComposer autoFocus />
+                <BotComposer autoFocus isActive={botOpen} />
               </div>
 
               <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
@@ -549,7 +558,7 @@ export function BotPage({
                   <ApprovalPrompt sessionId={approvalSessionId} />
                 </div>
               ) : (
-                <BotComposer autoFocus />
+                <BotComposer autoFocus isActive={botOpen} />
               )}
             </div>
           </>
@@ -616,7 +625,7 @@ function BotTimelineRow({
   const t = useT()
 
   if (item.kind === 'user') {
-    return <BotUserRow item={item} />
+    return <BotUserRow item={item} onOpenAttachmentFile={onOpenAttachmentFile} />
   }
 
   if (item.kind === 'system_fallback') {
@@ -930,22 +939,51 @@ function BotMessageActions({
   )
 }
 
-function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }> }) {
+function BotUserRow({
+  item,
+  onOpenAttachmentFile
+}: {
+  item: Extract<BotTimelineItem, { kind: 'user' }>
+  onOpenAttachmentFile?: (cwd: string, relativePath: string, line?: number | null) => void
+}) {
   const t = useT()
   const [preview, setPreview] = useState<string | null>(null)
   const images = (item.images ?? []).flatMap((image, i) => {
     const src = image.data && image.mimeType ? `data:${image.mimeType};base64,${image.data}` : null
     return src ? [{ key: i, src }] : []
   })
-  const textAttachments = item.textAttachments ?? []
+  const normalizedAttachments = (item.textAttachments ?? []).map((attachment) => ({
+    ...attachment,
+    byteSize: attachment.byteSize ?? utf8ByteLength(attachment.text)
+  }))
+  const inlineAttachments =
+    normalizedAttachments.length > 0 && isInlinePastedTextAttachments(item.text, normalizedAttachments)
+      ? normalizedAttachments
+      : undefined
+  const fileMentions = (item.fileMentions ?? []).filter((mention) => isFileMentionAt(item.text, mention))
+  const hasInlineSegments = Boolean(inlineAttachments || fileMentions.length > 0)
+  const inlineSegments = hasInlineSegments
+    ? createInlinePastedTextDisplayMetadata(item.text, inlineAttachments ?? [], fileMentions).segments
+    : undefined
+  const legacyAttachments = hasInlineSegments ? [] : normalizedAttachments
   const projectMentions = item.projectMentions ?? []
   const issueMentions = item.issueMentions ?? []
+  const mentionContext = useMemo(
+    () => ({
+      cwd: projectMentions[0] ?? null,
+      sessionId: null,
+      preferredCwds: projectMentions,
+      onOpenWorkspaceFile: onOpenAttachmentFile
+    }),
+    [projectMentions, onOpenAttachmentFile]
+  )
   const hasTextBubble =
     projectMentions.length > 0 ||
     issueMentions.length > 0 ||
-    textAttachments.length > 0 ||
+    Boolean(inlineSegments?.length) ||
+    legacyAttachments.length > 0 ||
     item.text.length > 0
-  const copyText = textAttachments.length > 0 ? composePromptText(item.text, textAttachments) : item.text
+  const copyText = legacyAttachments.length > 0 ? composePromptText(item.text, legacyAttachments) : item.text
 
   return (
     <MessageScrollerItem messageId={item.id} className={unclippedItem}>
@@ -978,7 +1016,7 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
               <BubbleContent
                 className={cn(
                   'flex max-w-full flex-col gap-1.5',
-                  textAttachments.length > 0 && 'border-border'
+                  (Boolean(inlineSegments) || legacyAttachments.length > 0) && 'border-border'
                 )}
               >
                 {projectMentions.length > 0 || issueMentions.length > 0 ? (
@@ -997,37 +1035,56 @@ function BotUserRow({ item }: { item: Extract<BotTimelineItem, { kind: 'user' }>
                     ))}
                   </div>
                 ) : null}
-                {textAttachments.map((attachment) => {
-                  const byteSize = attachment.byteSize ?? utf8ByteLength(attachment.text)
-                  return (
-                    <PastedTextPreview
-                      key={attachment.id}
-                      text={attachment.text}
-                      byteSize={byteSize}
-                      title={attachment.filename}
-                    >
-                      <Button
-                        type="button"
-                        variant="outline"
-                        className="h-auto w-full min-w-0 max-w-full justify-start gap-2 rounded-lg px-2.5 py-2 text-left font-normal whitespace-normal"
+                {inlineSegments ? (
+                  <FileMentionContext.Provider value={mentionContext}>
+                    <div className="whitespace-pre-wrap break-words">
+                      {inlineSegments.map((segment, index) =>
+                        segment.type === 'text' ? (
+                          <span key={index}>{renderTextWithIssueChips(segment.text)}</span>
+                        ) : segment.type === 'file' ? (
+                          <FileMentionChip key={index} path={segment.path} opensFile />
+                        ) : segment.type === 'attachment' ? (
+                          <PastedTextChip key={segment.attachment.id} attachment={segment.attachment} />
+                        ) : (
+                          <span key={index}>{segment.text}</span>
+                        )
+                      )}
+                    </div>
+                  </FileMentionContext.Provider>
+                ) : (
+                  <>
+                    {legacyAttachments.map((attachment) => (
+                      <PastedTextPreview
+                        key={attachment.id}
+                        text={attachment.text}
+                        byteSize={attachment.byteSize}
+                        title={attachment.filename}
                       >
-                        <span className="min-w-0">
-                          <span className="flex items-center gap-1.5 text-xs font-medium">
-                            <FileText data-icon="inline-start" />
-                            <span>{attachment.filename ?? t('composer.pastedText')}</span>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          className="h-auto w-full min-w-0 max-w-full justify-start gap-2 rounded-lg px-2.5 py-2 text-left font-normal whitespace-normal"
+                        >
+                          <span className="min-w-0">
+                            <span className="flex items-center gap-1.5 text-xs font-medium">
+                              <FileText data-icon="inline-start" />
+                              <span>{attachment.filename ?? t('composer.pastedText')}</span>
+                            </span>
+                            <span className="line-clamp-3 max-h-15 block overflow-hidden whitespace-pre-wrap break-words text-xs text-muted-foreground">
+                              {attachment.text}
+                            </span>
+                            <span className="mt-1 block text-[10px] text-muted-foreground">
+                              UTF-8 {formatPastedTextSize(attachment.byteSize)}
+                            </span>
                           </span>
-                          <span className="line-clamp-3 max-h-15 block overflow-hidden whitespace-pre-wrap break-words text-xs text-muted-foreground">
-                            {attachment.text}
-                          </span>
-                          <span className="mt-1 block text-[10px] text-muted-foreground">
-                            UTF-8 {formatPastedTextSize(byteSize)}
-                          </span>
-                        </span>
-                      </Button>
-                    </PastedTextPreview>
-                  )
-                })}
-                {item.text ? <div className="whitespace-pre-wrap break-words">{renderTextWithIssueChips(item.text)}</div> : null}
+                        </Button>
+                      </PastedTextPreview>
+                    ))}
+                    {item.text ? (
+                      <div className="whitespace-pre-wrap break-words">{renderTextWithIssueChips(item.text)}</div>
+                    ) : null}
+                  </>
+                )}
               </BubbleContent>
             </Bubble>
           ) : null}

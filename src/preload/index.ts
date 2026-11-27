@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer } from 'electron'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { GLASS_SURFACE_ARGUMENT } from '../shared/surface-style'
 import type { DiffScope, DiffWatchError, FileStamp, ModelCatalog, SessionApi, WorktreeDeletionJob, SessionNameUpdate, SessionTreeView, SessionWindowMessage, SettingsAuthEvent, SystemUIEvent, FileMemorySettingsPatch, MemorySettingsPatch, PluginScope, WebSearchSettingsPatch, ExtensionUIEvent, SubagentListUpdate, SubagentSettingsPatch } from '../shared/api'
 
@@ -390,6 +390,7 @@ const api: SessionApi = {
   cancelFileSearch: () => ipcRenderer.invoke('files:cancel-search'),
   fileMentionInfo: (cwd: string, path: string) => ipcRenderer.invoke('files:mention-info', cwd, path),
   localFileMentionInfo: (path: string) => ipcRenderer.invoke('files:local-mention-info', path),
+  getPathForFile: (file: File) => webUtils.getPathForFile(file),
   readFile: (cwd: string, path: string) => ipcRenderer.invoke('files:read', cwd, path),
   writeFile: (
     cwd: string,

@@ -407,4 +407,43 @@ describe('BotDispatcher', () => {
     expect(res.state).toBe('deferred')
     expect(timeline.filter((i) => i.kind === 'system_fallback')).toHaveLength(0)
   })
+
+  test('preserves inline pasted-text and file-mention ranges on user timeline item without duplicating inline text in prompt', async () => {
+    const timeline: BotTimelineItem[] = []
+    const prompts: BotPromptRequest[] = []
+
+    let dispatcher!: BotDispatcher
+    dispatcher = new BotDispatcher({
+      sendPrompt: async (req) => {
+        prompts.push(req)
+        dispatcher.markSideEffect('send_message')
+      },
+      abortCurrent: async () => {},
+      appendTimeline: async (item) => { timeline.push(item) },
+      onStreamingChanged: () => {},
+      onUserIdle: () => {}
+    })
+
+    const longBlock = Array.from({ length: 22 }, (_, i) => `line ${i + 1}`).join('\n')
+    const text = `看下 @/outside/spec.md 和日志 ${longBlock}`
+    const fileStart = text.indexOf('@/outside/spec.md')
+    const pasteStart = text.indexOf(longBlock)
+    const landed = await dispatcher.handleUserMessage({
+      text,
+      textAttachments: [{ id: 'paste-1', text: longBlock, byteSize: longBlock.length, start: pasteStart, end: pasteStart + longBlock.length }],
+      fileMentions: [{ path: '/outside/spec.md', start: fileStart, end: fileStart + '@/outside/spec.md'.length }],
+      projectMentions: ['/repo/pig']
+    })
+    await dispatcher.waitForIdle()
+
+    expect(landed.kind).toBe('user')
+    if (landed.kind === 'user') {
+      expect(landed.text).toBe(text)
+      expect(landed.textAttachments).toHaveLength(1)
+      expect(landed.fileMentions).toEqual([{ path: '/outside/spec.md', start: fileStart, end: fileStart + '@/outside/spec.md'.length }])
+    }
+    expect(prompts).toHaveLength(1)
+    expect(prompts[0].text).toBe(`[Referenced projects: /repo/pig]\n${text}`)
+    expect(prompts[0].textAttachments).toBeUndefined()
+  })
 })

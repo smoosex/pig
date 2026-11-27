@@ -47,7 +47,7 @@ async function fixture() {
   let resolvePreferenceSave: (() => void) | undefined
   const setModelCalls: Array<{ provider: string; id: string }> = []
   const setThinkingCalls: string[] = []
-  const sends: Array<{ text: string; projectMentions?: string[] }> = []
+  const sends: Array<Parameters<import('../src/shared/bot').BotApi['sendMessage']>[0]> = []
   let abortTurnCalls = 0
   let exportCalls = 0
   let deferExport = false
@@ -142,10 +142,20 @@ async function fixture() {
       else if (patch.delegateThinkingLevel !== undefined) next.delegateThinkingLevel = patch.delegateThinkingLevel
       return next
     },
-    sendMessage: async (input: { text: string; projectMentions?: string[] }) => {
+    sendMessage: async (input: Parameters<import('../src/shared/bot').BotApi['sendMessage']>[0]) => {
       sends.push(input)
       if (deferSend) await new Promise<void>((_resolve, reject) => { rejectSend = reject })
-      return { id: `u-${Date.now()}`, kind: 'user' as const, text: input.text, createdAt: Date.now() }
+      return {
+        id: `u-${Date.now()}`,
+        kind: 'user' as const,
+        text: input.text,
+        ...(input.images?.length ? { images: input.images } : {}),
+        ...(input.textAttachments?.length ? { textAttachments: input.textAttachments } : {}),
+        ...(input.fileMentions?.length ? { fileMentions: input.fileMentions } : {}),
+        ...(input.projectMentions?.length ? { projectMentions: input.projectMentions } : {}),
+        ...(input.issueMentions?.length ? { issueMentions: input.issueMentions } : {}),
+        createdAt: Date.now()
+      }
     },
     retryLastMessage: async () => null,
     abortCurrentTurn: async () => { abortTurnCalls++ },
@@ -471,8 +481,9 @@ async function fixture() {
   assert.ok(clearedThinkingTrigger, 'resets thinking picker to Off when controls become null')
   assert.equal(clearedThinkingTrigger.disabled, true, 'disables thinking picker when controls become null')
 
-  const input = composerHost.querySelector('textarea')!
-  const surface = input.closest('[data-slot="input-group"]')
+  const input = composerHost.querySelector<HTMLElement>('[data-slot="input-group-control"]')!
+  assert.ok(input, 'Bot renders the shared Tiptap composer editor control')
+  const surface = input.closest('[data-slot="input-group"]')!
   assert.ok(surface, 'Bot uses the workspace prompt surface')
   assert.ok(surface.classList.contains('solid:bg-composer-input-background'))
   assert.equal(input.dataset.slot, 'input-group-control')
@@ -480,11 +491,20 @@ async function fixture() {
   const press = (key: string, isComposing = false) => input.dispatchEvent(new KeyboardEvent('keydown', {
     key, isComposing, bubbles: true, cancelable: true
   }))
+  const pasteIntoBot = (text: string, files: File[] = []) => {
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
+    Object.assign(pasteEvent, {
+      clipboardData: {
+        files,
+        items: files.map((file) => ({ kind: 'file', type: file.type, getAsFile: () => file })),
+        getData: (type: string) => (type === 'text/plain' ? text : '')
+      }
+    })
+    input.dispatchEvent(pasteEvent)
+  }
   await act(async () => {
     input.focus()
-    Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(input, '看看 @pi 吧')
-    input.setSelectionRange(6, 6)
-    input.dispatchEvent(new InputEvent('input', { bubbles: true }))
+    pasteIntoBot('看看 @pi')
   })
   const options = () => [...document.querySelectorAll('[role="listbox"] [role="option"]')]
   assert.equal(options().length, 1, 'typed @ filters the composer-wide project panel')
@@ -493,7 +513,7 @@ async function fixture() {
   assert.equal(options().length, 1)
   await act(async () => { press('Enter') })
   assert.equal(options().length, 0)
-  assert.equal(input.value, '看看  吧')
+  assert.equal(useBotStore.getState().draftInput, '看看 ')
   assert.equal(sends.length, 0, 'accepting a mention does not send')
   const mentionButton = composerHost.querySelector<HTMLButtonElement>('button[aria-expanded="false"][aria-label*="project" i]')!
   assert.ok(mentionButton)
@@ -502,14 +522,67 @@ async function fixture() {
   await act(async () => { press('Escape') })
   assert.equal(options().length, 0)
   await act(async () => { press('Enter') })
-  assert.deepEqual(sends.at(-1), { text: '看看  吧', projectMentions: ['/repo/pig'] })
+  assert.deepEqual(sends.at(-1), { text: '看看', projectMentions: ['/repo/pig'] })
+
+  // Long paste (>20 lines) turns into an inline PastedTextChip in BotComposer and sends inline textAttachments
+  const longText = Array.from({ length: 24 }, (_, idx) => `log line ${idx + 1}`).join('\n')
+  await act(async () => {
+    pasteIntoBot(longText)
+  })
+  assert.ok(
+    composerHost.querySelector('[data-node-view-wrapper]'),
+    'long paste renders as an inline PastedTextChip inside BotComposer'
+  )
+  await act(async () => { press('Enter') })
+  const longSent = sends.at(-1)!
+  assert.equal(longSent.text, longText)
+  assert.equal(longSent.textAttachments?.length, 1)
+  assert.equal(longSent.textAttachments?.[0]?.start, 0)
+  assert.equal(longSent.textAttachments?.[0]?.end, longText.length)
+
+  // Pasting an image into BotComposer renders a thumbnail and sends base64 image payload
+  const pngBytes = new Uint8Array([137, 80, 78, 71])
+  const pngFile = new File([pngBytes], 'bot-paste.png', { type: 'image/png' })
+  await act(async () => {
+    pasteIntoBot('', [pngFile])
+    await new Promise((resolve) => setTimeout(resolve, 30))
+  })
+  assert.ok(composerHost.querySelector('img'), 'pasted image renders preview thumbnail in BotComposer')
+  await act(async () => { press('Enter') })
+  const imageSent = sends.at(-1)!
+  assert.equal(imageSent.images?.length, 1)
+  assert.equal(imageSent.images?.[0]?.mimeType, 'image/png')
+  assert.ok((imageSent.images?.[0]?.data.length ?? 0) > 0)
+
+  // Dropping an external OS file onto BotComposer inserts a FileMentionChip and sends fileMentions
+  const externalSpec = new File(['# spec'], 'spec.md', { type: 'text/markdown' })
+  const winApi = (window as unknown as { api: Record<string, unknown> }).api
+  winApi.getPathForFile = (file: File) => (file === externalSpec ? '/outside/spec.md' : '')
+  winApi.localFileMentionInfo = async (path: string) => ({ kind: 'file', absolutePath: path, modifiedAt: 1, lineCount: 5 })
+  const dropSpec = new Event('drop', { bubbles: true, cancelable: true })
+  Object.assign(dropSpec, {
+    dataTransfer: { types: ['Files'], files: [externalSpec], items: [], getData: () => '' },
+    clientX: 0,
+    clientY: 0
+  })
+  await act(async () => {
+    input.dispatchEvent(dropSpec)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  })
+  assert.equal(dropSpec.defaultPrevented, true)
+  assert.equal(useBotStore.getState().draftInput, '@/outside/spec.md ')
+  await act(async () => { press('Enter') })
+  const fileSent = sends.at(-1)!
+  assert.equal(fileSent.text, '@/outside/spec.md')
+  assert.deepEqual(fileSent.fileMentions, [{ path: '/outside/spec.md', start: 0, end: 17 }])
 
   deferSend = true
   await act(async () => { useBotStore.getState().setDraftInput('first draft') })
   await act(async () => { press('Enter') })
   await act(async () => { useBotStore.getState().setDraftInput('next draft') })
   await act(async () => { rejectSend!(new Error('send failed')) })
-  assert.equal(input.value, 'next draft')
+  assert.equal(useBotStore.getState().draftInput, 'next draft')
+  assert.equal(input.textContent, 'next draft')
   deferSend = false
 
   // Single-slot send/stop replacement matching workspace ComposerToolbar:

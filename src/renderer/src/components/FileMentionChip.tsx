@@ -187,22 +187,40 @@ function FileHoverCard({
   )
 }
 
+function isExplicitLocalPath(path: string): boolean {
+  return path.startsWith('/') || path.startsWith('~/') || path.startsWith('~\\') || /^[a-zA-Z]:[\\/]/.test(path)
+}
+
 /**
  * A file referenced with `@`: the name to scan, a hover card with where it lives and how big it is,
- * and, in a sent message, a click that opens it in a file tab. In the composer a click only places
- * the caret. Facts are read on every hover rather than cached, since the agent may have just changed
- * the file.
+ * and, in a sent message, a click that opens it in a file tab (or via the OS when outside workspaces).
+ * In the composer a click only places the caret. Facts are read on every hover rather than cached,
+ * since the agent may have just changed the file.
  */
 export function FileMentionChip({ path, opensFile = false, className }: { path: string; opensFile?: boolean; className?: string }) {
-  const { cwd } = useContext(FileMentionContext)
+  const { cwd, preferredCwds, onOpenWorkspaceFile } = useContext(FileMentionContext)
+  const projects = useSessionsStore((state) => state.projects)
+  const isExplicitLocal = isExplicitLocalPath(path)
+  const matchedWorkspace = isExplicitLocal
+    ? matchOpenedWorkspaceFile(path, cwd ? [cwd, ...(preferredCwds ?? [])] : (preferredCwds ?? []), projects)
+    : null
+  const canLoad = isExplicitLocal || Boolean(cwd)
+  const editsCwd = isExplicitLocal ? (matchedWorkspace?.cwd ?? null) : cwd
+  const editsRelativePath = isExplicitLocal ? (matchedWorkspace?.relativePath ?? null) : path
 
   return (
     <FileHoverCard
       displayPath={path}
-      editsCwd={cwd}
-      editsRelativePath={path}
-      canLoad={Boolean(cwd)}
-      loadInfo={() => api.fileMentionInfo(cwd!, path)}
+      editsCwd={editsCwd}
+      editsRelativePath={editsRelativePath}
+      canLoad={canLoad}
+      loadInfo={() =>
+        isExplicitLocal
+          ? matchedWorkspace
+            ? api.fileMentionInfo(matchedWorkspace.cwd, matchedWorkspace.relativePath)
+            : api.localFileMentionInfo(path)
+          : api.fileMentionInfo(cwd!, path)
+      }
     >
       {({ missing, dismiss }) => (
         <Button
@@ -214,9 +232,21 @@ export function FileMentionChip({ path, opensFile = false, className }: { path: 
           onClick={
             opensFile
               ? () => {
-                  if (!cwd || missing) return
+                  if (missing) return
+                  if (isExplicitLocal) {
+                    dismiss()
+                    if (matchedWorkspace) {
+                      if (onOpenWorkspaceFile) onOpenWorkspaceFile(matchedWorkspace.cwd, matchedWorkspace.relativePath)
+                      else void useSessionsStore.getState().openFileTab(matchedWorkspace.cwd, matchedWorkspace.relativePath, { preview: true })
+                    } else {
+                      void api.openLocalFileExternally(path).catch((error) => toast.error(failureMessage(error)))
+                    }
+                    return
+                  }
+                  if (!cwd) return
                   dismiss()
-                  void useSessionsStore.getState().openFileTab(cwd, path, { preview: true })
+                  if (onOpenWorkspaceFile) onOpenWorkspaceFile(cwd, path)
+                  else void useSessionsStore.getState().openFileTab(cwd, path, { preview: true })
                 }
               : undefined
           }

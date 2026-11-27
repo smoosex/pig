@@ -1126,6 +1126,8 @@ export interface SessionApi extends ToolSettingsApi, SkillsApi, SessionCapabilit
   suggestFiles: (cwd: string, query: string) => Promise<FileSuggestion[]>
   fileMentionInfo: (cwd: string, path: string) => Promise<FileMentionInfo>
   localFileMentionInfo: (path: string) => Promise<FileMentionInfo>
+  /** Resolves an HTML5 dropped `File` to its native OS filesystem path via Electron `webUtils`, or `''`. */
+  getPathForFile: (file: File) => string
   readFile: (cwd: string, path: string) => Promise<FileReadResult>
   /**
    * Writes a file tab's draft. `expected` is the stamp the draft was edited against: a file that has

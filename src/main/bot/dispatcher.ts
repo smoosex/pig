@@ -9,6 +9,8 @@
 import { randomUUID } from 'node:crypto'
 import type { PromptStreamingBehavior } from '../../shared/api'
 import type { BotImageAttachment, BotNotice, BotTextAttachment, BotTimelineItem } from '../../shared/bot'
+import { isFileMentionAt, isFileMentionShape, rangesAreDisjoint, type FileMention } from '../../shared/file-mentions'
+import { isInlinePastedTextAttachments, utf8ByteLength } from '../../shared/pasted-text'
 import { BOT_REPROMPT_NO_MESSAGE, formatNoticesPrompt } from './prompt'
 
 export interface BotPromptRequest {
@@ -150,11 +152,29 @@ export class BotDispatcher {
     text: string
     images?: BotImageAttachment[]
     textAttachments?: BotTextAttachment[]
+    fileMentions?: FileMention[]
     projectMentions?: string[]
     issueMentions?: number[]
   }): Promise<BotTimelineItem> {
-    const cleanText = input.text.trim()
-    if (!cleanText && !input.images?.length && !input.textAttachments?.length && !input.issueMentions?.length) {
+    const normalizedAttachments = input.textAttachments?.map((att) => ({
+      ...att,
+      byteSize: att.byteSize ?? utf8ByteLength(att.text)
+    }))
+    const inlineAttachments =
+      normalizedAttachments?.length && isInlinePastedTextAttachments(input.text, normalizedAttachments)
+        ? normalizedAttachments
+        : undefined
+    const candidateMentions = (input.fileMentions ?? []).filter(
+      (mention) => isFileMentionShape(mention) && isFileMentionAt(input.text, mention)
+    )
+    const validMentions =
+      candidateMentions.length > 0 &&
+      rangesAreDisjoint([...(inlineAttachments ?? []), ...candidateMentions])
+        ? candidateMentions
+        : []
+    const hasInlineRanges = Boolean(inlineAttachments || validMentions.length > 0)
+    const cleanText = hasInlineRanges ? input.text : input.text.trim()
+    if (!cleanText.trim() && !input.images?.length && !input.textAttachments?.length && !input.issueMentions?.length) {
       throw new Error('Message cannot be empty')
     }
 
@@ -164,12 +184,16 @@ export class BotDispatcher {
       text: cleanText,
       ...(input.images?.length ? { images: input.images } : {}),
       ...(input.textAttachments?.length ? { textAttachments: input.textAttachments } : {}),
+      ...(validMentions.length ? { fileMentions: validMentions } : {}),
       ...(input.projectMentions?.length ? { projectMentions: input.projectMentions } : {}),
       ...(input.issueMentions?.length ? { issueMentions: input.issueMentions } : {}),
       createdAt: Date.now()
     }
     await this.deps.appendTimeline(userItem)
     const promptText = formatUserInputText(cleanText, input.projectMentions, input.issueMentions)
+    // Inline composer attachments already live inside `cleanText`; omit them from prompt attachments so
+    // `sendToBotSession` never appends `[Attached text]` a second time after header formatting or burst merges.
+    const promptAttachments = inlineAttachments ? undefined : input.textAttachments
 
     if (this.activeTurn) {
       if (this.activeTurn.kind === 'user' && !this.activeTurn.hasSideEffect) {
@@ -178,7 +202,7 @@ export class BotDispatcher {
         this.pendingPreemptInputs.push({
           text: promptText,
           images: input.images,
-          textAttachments: input.textAttachments
+          textAttachments: promptAttachments
         })
         void this.deps.abortCurrent().catch(() => {})
         return userItem
@@ -190,14 +214,14 @@ export class BotDispatcher {
         void this.deps.sendPrompt({
           text: promptText,
           images: input.images,
-          textAttachments: input.textAttachments,
+          textAttachments: promptAttachments,
           streamingBehavior: 'steer'
         }).catch((error) => {
           console.error('Bot steer prompt failed; queueing follow-up burst:', error)
           const fallbackInput = {
             text: promptText,
             images: input.images,
-            textAttachments: input.textAttachments
+            textAttachments: promptAttachments
           }
           if (this.activeTurn) {
             this.pendingPreemptInputs.push(fallbackInput)
@@ -217,7 +241,7 @@ export class BotDispatcher {
       this.pendingPreemptInputs.push({
         text: promptText,
         images: input.images,
-        textAttachments: input.textAttachments
+        textAttachments: promptAttachments
       })
       return userItem
     }
@@ -225,7 +249,7 @@ export class BotDispatcher {
     const work = this.runUserBurst(
       [promptText],
       input.images ? [...input.images] : [],
-      input.textAttachments ? [...input.textAttachments] : []
+      promptAttachments ? [...promptAttachments] : []
     )
     this.runPromise = work
     return userItem

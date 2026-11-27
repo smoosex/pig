@@ -1,4 +1,5 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { worktreeImageMimeType } from '../../../../shared/worktree-files'
 import { t } from '../../lib/i18n'
 import { useComposerDraftsStore, type DraftImage } from '../../stores/composer-drafts'
 
@@ -40,7 +41,7 @@ function readImage(file: File): Promise<PastedImage> {
       }
       resolve({
         id: crypto.randomUUID(),
-        mimeType: file.type || 'image/png',
+        mimeType: file.type || worktreeImageMimeType(file.name) || 'image/png',
         data,
         url: URL.createObjectURL(file)
       })
